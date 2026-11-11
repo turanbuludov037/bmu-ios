@@ -1,0 +1,75 @@
+# Hər "push"-da GitHub-ın Mac serveri iOS tətbiqini build edir və imzasız BMU.ipa faylı verir.
+# Faylı Actions → son build → "Artifacts" → BMU-ipa-dan endir, Sideloadly ilə iPhone-a qoy.
+name: iOS build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode versiyası
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || echo /Applications/Xcode.app)" || true
+          xcodebuild -version
+
+      - name: XcodeGen qur və layihəni yarat
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (imzasız)
+        run: |
+          set +e
+          xcodebuild \
+            -project BMU.xcodeproj \
+            -scheme BMU \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            echo "===== XƏTALAR ====="
+            grep -E "error:" build.log | sort -u | head -60
+            # xətalar build səhifəsində də görünsün
+            grep -E "\.swift:[0-9]+:[0-9]+: error:" build.log | sort -u | head -40 | while IFS= read -r line; do
+              file=$(echo "$line" | sed -E 's#^.*/(BMU/[^:]+):([0-9]+):([0-9]+): error: (.*)$#\1#')
+              ln=$(echo "$line" | sed -E 's#^.*/BMU/[^:]+:([0-9]+):([0-9]+): error: (.*)$#\1#')
+              msg=$(echo "$line" | sed -E 's#^.*: error: (.*)$#\1#')
+              echo "::error file=$file,line=$ln::$msg"
+            done
+            tail -40 build.log
+            exit $code
+          fi
+          tail -5 build.log
+
+      - name: IPA fayla yığ
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/BMU.app Payload/
+          zip -qry BMU.ipa Payload
+          ls -lh BMU.ipa
+
+      - name: IPA-nı yüklə
+        uses: actions/upload-artifact@v4
+        with:
+          name: BMU-ipa
+          path: BMU.ipa
+          retention-days: 14
+
+      - name: Build logu (xəta olanda)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
