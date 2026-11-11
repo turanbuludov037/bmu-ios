@@ -11,13 +11,14 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: bmu-ios      # layihə faylları repoda bmu-ios/ qovluğundadır
     steps:
       - uses: actions/checkout@v4
 
       - name: Xcode versiyası
-        run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || echo /Applications/Xcode.app)" || true
-          xcodebuild -version
+        run: xcodebuild -version
 
       - name: XcodeGen qur və layihəni yarat
         run: |
@@ -40,12 +41,11 @@ jobs:
           if [ $code -ne 0 ]; then
             echo "===== XƏTALAR ====="
             grep -E "error:" build.log | sort -u | head -60
-            # xətalar build səhifəsində də görünsün
             grep -E "\.swift:[0-9]+:[0-9]+: error:" build.log | sort -u | head -40 | while IFS= read -r line; do
               file=$(echo "$line" | sed -E 's#^.*/(BMU/[^:]+):([0-9]+):([0-9]+): error: (.*)$#\1#')
               ln=$(echo "$line" | sed -E 's#^.*/BMU/[^:]+:([0-9]+):([0-9]+): error: (.*)$#\1#')
               msg=$(echo "$line" | sed -E 's#^.*: error: (.*)$#\1#')
-              echo "::error file=$file,line=$ln::$msg"
+              echo "::error file=bmu-ios/$file,line=$ln::$msg"
             done
             tail -40 build.log
             exit $code
@@ -63,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BMU-ipa
-          path: BMU.ipa
+          path: bmu-ios/BMU.ipa
           retention-days: 14
 
       - name: Build logu (xəta olanda)
@@ -71,5 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: build.log
+          path: bmu-ios/build.log
           retention-days: 7
