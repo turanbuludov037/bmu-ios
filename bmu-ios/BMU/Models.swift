@@ -69,8 +69,10 @@ let ABSENCE_LIMIT_PERCENT = 25.0
 
 // MARK: - Qiymətləndirmə qaydası (BMU) — Android-dəki GradeRules / GradeCalc ilə eyni
 
+/// Giriş balına minimum yoxdur. Keçmək üçün: giriş + final ≥ 51 və final ≥ 17.
+/// SDF1/SDF2 (və SEM, LAB, TSİ) 10 baldır; müəllim 10-dan çox yazıbsa maksimum həmin bal olur.
 enum GradeRules {
-    static let entryMax = 50, entryMin = 34, examMax = 50, examMin = 17, part = 10
+    static let entryMax = 50, examMax = 50, examMin = 17, pass = 51, part = 10
     static let letters: [(String, Int)] = [("A", 91), ("B", 81), ("C", 71), ("D", 61), ("E", 51)]
 }
 
@@ -88,31 +90,35 @@ enum GradeCalc {
     static func hasSem(_ r: GradeRow) -> Bool { !r.m.isEmpty || !r.score("SEM").isEmpty }
     static func hasLab(_ r: GradeRow) -> Bool { !r.l.isEmpty || !r.score("LAB").isEmpty }
 
-    /// Giriş balının hissələri (SEM/LAB yoxdursa onların balı SDF1 və SDF2-yə keçir).
+    /// Hissə: maksimum 10 bal; 10-dan çox yazılıbsa maksimum həmin bal olur.
+    private static func part(_ key: String, _ r: GradeRow) -> Part {
+        let v = num(r.score(key))
+        return Part(key: key, max: Swift.max(GradeRules.part, Int((v ?? 0).rounded(.up))), value: v)
+    }
+
+    /// Giriş balının hissələri (SEM/LAB yalnız fəndə varsa).
     static func parts(_ r: GradeRow) -> [Part] {
-        let sem = hasSem(r), lab = hasLab(r)
-        let free = (sem ? 0 : GradeRules.part) + (lab ? 0 : GradeRules.part)
-        let sdf = GradeRules.part + free / 2
-        var p = [Part(key: "SDF1", max: sdf, value: num(r.score("SDF1"))),
-                 Part(key: "SDF2", max: sdf + free % 2, value: num(r.score("SDF2")))]
-        if sem { p.append(Part(key: "SEM", max: GradeRules.part, value: num(r.score("SEM")))) }
-        if lab { p.append(Part(key: "LAB", max: GradeRules.part, value: num(r.score("LAB")))) }
-        p.append(Part(key: "TSI", max: GradeRules.part, value: num(r.score("TSI"))))
+        var p = [part("SDF1", r), part("SDF2", r)]
+        if hasSem(r) { p.append(part("SEM", r)) }
+        if hasLab(r) { p.append(part("LAB", r)) }
+        p.append(part("TSI", r))
         return p
     }
+
+    /// Fənnin giriş balının maksimumu (hissələrin cəmi, ən çox 50).
+    static func entryMax(_ r: GradeRow) -> Int { Swift.min(GradeRules.entryMax, parts(r).reduce(0) { $0 + $1.max }) }
 
     /// Final imtahanının sayılan nəticəsi: təkrar → əlavə → semestr sonu.
     static func exam(_ r: GradeRow) -> Double? { num(r.score("TI")) ?? num(r.score("ƏI")) ?? num(r.score("SSI")) }
 
     static func letter(entry: Double, exam: Double) -> String {
         let total = entry + exam
-        if entry < Double(GradeRules.entryMin) - 1e-9 || exam < Double(GradeRules.examMin) - 1e-9 { return "F" }
+        if exam < Double(GradeRules.examMin) - 1e-9 || total < Double(GradeRules.pass) - 1e-9 { return "F" }
         return GradeRules.letters.first { total >= Double($0.1) - 1e-9 }?.0 ?? "F"
     }
 
     /// Hədəf bal üçün finaldan lazım olan minimum (17-dən az ola bilməz). Mümkün deyilsə nil.
     static func neededExam(entry: Double, target: Int) -> Int? {
-        if entry < Double(GradeRules.entryMin) - 1e-9 { return nil }
         let n = Swift.max(GradeRules.examMin, Int((Double(target) - entry - 1e-9).rounded(.up)))
         return n > GradeRules.examMax ? nil : n
     }
@@ -120,6 +126,19 @@ enum GradeCalc {
     /// İndiki giriş balı: portal IGB yazıbsa o, yoxsa yazılmış hissələrin cəmi.
     static func entryNow(_ r: GradeRow) -> Double {
         num(r.score("IGB")) ?? parts(r).reduce(0) { $0 + ($1.value ?? 0) }
+    }
+
+    /// Keçmək (51) üçün finaldan lazım olan minimum; 50 belə çatmırsa nil.
+    static func examNeed(_ r: GradeRow) -> Int? { neededExam(entry: entryNow(r), target: GradeRules.pass) }
+
+    /// Hələ heç bir giriş balı yazılmayıb.
+    static func noEntryYet(_ r: GradeRow) -> Bool { num(r.score("IGB")) == nil && parts(r).allSatisfy { $0.value == nil } }
+
+    /// Final yazılıb və keçib, ya da final yazılmayıb və 17 bal kifayətdir.
+    static func isSafe(_ r: GradeRow) -> Bool {
+        if let e = exam(r) { return letter(entry: entryNow(r), exam: e) != "F" }
+        guard let n = examNeed(r) else { return false }
+        return n <= GradeRules.examMin
     }
 
     /// Hələ yazılmamış hissələrdən yığıla biləcək maksimum bal.

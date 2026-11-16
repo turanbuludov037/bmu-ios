@@ -55,13 +55,13 @@ private struct GradesSummary: View {
 
     var body: some View {
         let akts = rows.reduce(0) { $0 + $1.akts }
-        let passed = rows.filter { GradeCalc.entryNow($0) >= Double(GradeRules.entryMin) }.count
+        let passed = rows.filter { GradeCalc.isSafe($0) }.count
         HStack(spacing: 0) {
             item("\(rows.count)", t("Fənn", "Courses"))
             Divider().frame(height: 34)
             item("\(akts)", "AKTS")
             Divider().frame(height: 34)
-            item("\(passed)/\(rows.count)", t("Girişi 34+", "Entry 34+"))
+            item("\(passed)/\(rows.count)", t("Rahat keçir", "On track"))
         }
         .padding(.vertical, 14)
         .glassCard(cornerRadius: 22, tint: C.indigo.opacity(0.12))
@@ -82,7 +82,9 @@ struct GradeCard: View {
     var body: some View {
         let entry = GradeCalc.entryNow(row)
         let exam = GradeCalc.exam(row)
-        let ok = entry >= Double(GradeRules.entryMin)
+        let ok = GradeCalc.isSafe(row)
+        let maxE = Swift.max(Double(GradeCalc.entryMax(row)), entry)
+        let need = GradeCalc.examNeed(row)
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -92,18 +94,21 @@ struct GradeCard: View {
                 Spacer(minLength: 0)
                 if let exam { LetterBadge(letter: GradeCalc.letter(entry: entry, exam: exam)) }
             }
-            ScoreBar(value: entry, max: Double(GradeRules.entryMax), mark: Double(GradeRules.entryMin), color: ok ? C.green : C.indigo)
+            ScoreBar(value: entry, max: maxE, color: ok ? C.green : C.indigo)
             HStack {
-                Text(t("Giriş: \(fmt(entry)) / \(GradeRules.entryMax)", "Entry: \(fmt(entry)) / \(GradeRules.entryMax)"))
+                Text(t("Giriş: \(fmt(entry)) / \(fmt(maxE))", "Entry: \(fmt(entry)) / \(fmt(maxE))"))
                     .font(.caption.weight(.semibold)).foregroundStyle(Color.primary)
                 Spacer()
                 if let exam {
                     Text(t("İmtahan: \(fmt(exam)) / \(GradeRules.examMax)", "Exam: \(fmt(exam)) / \(GradeRules.examMax)")).font(.caption).foregroundStyle(.secondary)
-                } else if ok {
-                    Text(t("İmtahana buraxılırsan", "Eligible for the exam")).font(.caption.weight(.medium)).foregroundStyle(C.green)
+                } else if GradeCalc.noEntryYet(row) {
+                    Text(t("Keçmək: cəmi ≥ \(GradeRules.pass)", "Pass: total ≥ \(GradeRules.pass)")).font(.caption).foregroundStyle(.secondary)
+                } else if let need {
+                    Text(need <= GradeRules.examMin ? t("Finaldan \(need) kifayətdir", "\(need) on the final is enough")
+                                                     : t("Finaldan \(need) lazımdır", "Need \(need) on the final"))
+                        .font(.caption.weight(.medium)).foregroundStyle(ok ? C.green : C.rose)
                 } else {
-                    Text(t("34-ə \(fmt(Double(GradeRules.entryMin) - entry)) bal qalıb", "\(fmt(Double(GradeRules.entryMin) - entry)) points to 34"))
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(t("Finaldan 50 belə çatmır", "Even 50 won't reach 51")).font(.caption.weight(.medium)).foregroundStyle(C.rose)
                 }
             }
             if !row.missed.isEmpty && row.missed != "0" {
@@ -141,7 +146,7 @@ struct GradeDetail: View {
                         HStack {
                             Text(t("Cəmi", "Total")).font(.subheadline.weight(.bold))
                             Spacer()
-                            Text("\(fmt(entry)) / \(GradeRules.entryMax)").font(.subheadline.weight(.bold).monospacedDigit())
+                            Text("\(fmt(entry)) / \(fmt(Swift.max(Double(GradeCalc.entryMax(row)), entry)))").font(.subheadline.weight(.bold).monospacedDigit())
                         }
                         let open = GradeCalc.entryOpen(row)
                         if open > 0 {
@@ -169,11 +174,7 @@ struct GradeDetail: View {
 
                     if exam == nil {
                         GlassSection(title: t("İmtahandan nə qədər lazımdır?", "What do you need on the exam?"), icon: "target") {
-                            if entry < Double(GradeRules.entryMin) {
-                                Text(t("İmtahana buraxılmaq üçün giriş balı ən azı \(GradeRules.entryMin) olmalıdır. Hələ \(fmt(Double(GradeRules.entryMin) - entry)) bal lazımdır.",
-                                       "You need at least \(GradeRules.entryMin) entry points to sit the exam. \(fmt(Double(GradeRules.entryMin) - entry)) more needed."))
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            } else {
+                            Group {
                                 ForEach(GradeRules.letters, id: \.0) { item in
                                     HStack {
                                         LetterBadge(letter: item.0).scaleEffect(0.75).frame(width: 34, height: 34)
@@ -186,7 +187,8 @@ struct GradeDetail: View {
                                         }
                                     }
                                 }
-                                Text(t("İmtahandan ən azı \(GradeRules.examMin) bal lazımdır.", "At least \(GradeRules.examMin) points are required on the exam."))
+                                Text(t("Keçmək üçün: giriş + final ≥ \(GradeRules.pass) və final ≥ \(GradeRules.examMin). Giriş balına minimum yoxdur.",
+                                       "To pass: entry + final ≥ \(GradeRules.pass) and final ≥ \(GradeRules.examMin). There is no entry minimum."))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
