@@ -56,6 +56,12 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/BMU.app Payload/
+          # vidcet və tətbiq üçün App Group icazəsi (Sideloadly imzalayanda götürür)
+          if [ -d Payload/BMU.app/PlugIns/BMUWidget.appex ]; then
+            codesign --force --sign - --entitlements BMUWidget/BMUWidget.entitlements Payload/BMU.app/PlugIns/BMUWidget.appex || true
+          fi
+          codesign --force --sign - --entitlements BMU/BMU.entitlements Payload/BMU.app || true
+          ls Payload/BMU.app/PlugIns || true
           zip -qry BMU.ipa Payload
           ls -lh BMU.ipa
 

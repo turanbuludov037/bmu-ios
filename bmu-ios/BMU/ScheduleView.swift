@@ -4,6 +4,11 @@ struct ScheduleView: View {
     @EnvironmentObject private var app: AppState
     @State private var day = Day.startOfToday()
     @State private var direction: Edge = .trailing
+    @ObservedObject private var tt = TimetableStore.shared
+    @State private var share: ShareItem?
+    @State private var showPhoto = false
+    @State private var exporting = false
+    @State private var exportMsg: String?
 
     var body: some View {
         NavigationStack {
@@ -16,7 +21,9 @@ struct ScheduleView: View {
                             Text(Day.title(day)).font(.headline)
                                 .contentTransition(.numericText())
                             let n = app.lessons[Day.key(day)]?.count ?? 0
-                            Text(n == 0 ? t("dərs yoxdur", "no classes") : t("\(n) dərs", "\(n) class\(n == 1 ? "" : "es")"))
+                            let wk = tt.entries.isEmpty ? nil : tt.weekOf(day, lessons: app.lessons)
+                            Text((n == 0 ? t("dərs yoxdur", "no classes") : t("\(n) dərs", "\(n) class\(n == 1 ? "" : "es")"))
+                                 + (wk.map { " · " + TimetableStore.weekLabel($0) } ?? ""))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -34,6 +41,14 @@ struct ScheduleView: View {
                         .id(Day.key(day))
                         .transition(.asymmetric(insertion: .move(edge: direction).combined(with: .opacity),
                                                 removal: .opacity))
+
+                    if tt.entries.isEmpty {
+                        Button { Haptic.tap(); showPhoto = true } label: {
+                            NavRow(icon: "photo.badge.plus", color: C.teal, title: t("Cədvəl şəklini yüklə", "Add timetable photo"),
+                                   subtitle: t("Otaqlar, müəllimlər, alt/üst həftə", "Rooms, teachers, upper/lower week"))
+                        }
+                        .buttonStyle(PressStyle())
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -41,6 +56,30 @@ struct ScheduleView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .navigationTitle(t("Cədvəl", "Schedule"))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { shareWeek() } label: {
+                            Label(t("Həftəni şəkil kimi paylaş", "Share week as image"), systemImage: "square.and.arrow.up")
+                        }
+                        Button { exportCalendar() } label: {
+                            Label(t("Telefonun təqviminə köçür", "Copy to phone calendar"), systemImage: "calendar.badge.plus")
+                        }
+                        Button { showPhoto = true } label: {
+                            Label(t("Cədvəl şəkli (otaqlar)", "Timetable photo (rooms)"), systemImage: "photo.on.rectangle")
+                        }
+                    } label: {
+                        if exporting { ProgressView() } else { Image(systemName: "ellipsis.circle") }
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showPhoto) { TimetablePhotoView() }
+            .sheet(item: $share) { ActivitySheet(items: $0.items).presentationDetents([.medium, .large]) }
+            .alert(t("Təqvim", "Calendar"), isPresented: Binding(get: { exportMsg != nil }, set: { if !$0 { exportMsg = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(exportMsg ?? "")
+            }
             .refreshable { Haptic.soft(); let d = day; await refreshWork { await app.ensureMonth(d, force: true) } }
             .task(id: Day.key(Day.monday(of: day))) {
                 // həftə iki aya düşə bilər: hər ikisini yüklə
@@ -54,6 +93,30 @@ struct ScheduleView: View {
                     go(to: Day.add(v.translation.width < 0 ? 1 : -1, to: day))
                 }
             )
+        }
+    }
+
+    private func shareWeek() {
+        let monday = Day.monday(of: day)
+        let wk = tt.entries.isEmpty ? nil : tt.weekOf(day, lessons: app.lessons)
+        guard let img = WeekShareCard.render(monday: monday, lessons: app.lessons, group: app.profile.group, week: wk) else { return }
+        Haptic.tap()
+        Usage.shared.action("share_timetable")
+        share = ShareItem(items: [img])
+    }
+
+    private func exportCalendar() {
+        exporting = true
+        Task {
+            defer { exporting = false }
+            do {
+                let n = try await CalendarExport.export(app)
+                Haptic.success()
+                exportMsg = t("\(n) dərs təqvimə yazıldı. Yenidən köçürəndə köhnələri silinir.", "\(n) classes added. Exporting again replaces the old ones.")
+            } catch {
+                Haptic.error()
+                exportMsg = error.localizedDescription
+            }
         }
     }
 

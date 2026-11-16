@@ -20,6 +20,10 @@ final class AppState: ObservableObject {
     @Published var loggedIn = false
     @Published var restoreError = ""
     private var didRestore = false
+    /// İnternetsiz rejim: portala daxil olmaq alınmadı, son saxlanan nüsxə göstərilir.
+    @Published var offline = false
+    @Published var offlineSavedAt: Date?
+    @Published var reconnecting = false
 
     // profil
     @Published var profile = Profile()
@@ -63,11 +67,66 @@ final class AppState: ObservableObject {
             try await login(c.0, c.1, remember: true)
         } catch PortalError.wrongCredentials {
             Keychain.clear()
+            OfflineCache.clear()
             restoreError = t("Saxlanmış şifrə köhnəlib, yenidən daxil olun", "Saved password is outdated, please sign in again")
         } catch {
-            restoreError = error.localizedDescription
+            // internet yoxdur / portal cavab vermir: son saxlanan nüsxə ilə aç
+            if let snap = OfflineCache.load(number: c.0) {
+                enterOffline(snap)
+            } else {
+                restoreError = error.localizedDescription
+            }
         }
         restoring = false
+    }
+
+    /// İnternetsiz rejimə keçid: hər şey son saxlanan nüsxədən.
+    private func enterOffline(_ snap: OfflineSnapshot) {
+        profile = snap.profile
+        lessons = snap.lessons
+        gradeSems = snap.gradeSems; gradeSel = snap.gradeSel; grades = snap.grades
+        journalSems = snap.journalSems; journalSel = snap.journalSel; journal = snap.journal
+        journalDefault = snap.journalSel; journalDefaultCourses = snap.journal
+        offline = true
+        offlineSavedAt = snap.savedAt
+        loggedIn = true
+        TimetableStore.shared.load(number: snap.profile.number, group: snap.profile.group)
+        LibraryDue.loadState()
+        WidgetData.publish(lessons)
+    }
+
+    /// "Yenidən qoşul" — internet gələndə portala yenidən daxil olur.
+    func goOnline() async {
+        guard let c = Keychain.load(), !reconnecting else { return }
+        reconnecting = true
+        defer { reconnecting = false }
+        do {
+            try await login(c.0, c.1, remember: true)
+            loadedMonths = []
+            gradeSems = []
+            journalDefaultCourses = []
+            await ensureMonth(Date(), force: true)
+            await ensureMonth(Day.add(7, to: Date()))
+            Haptic.success()
+        } catch PortalError.wrongCredentials {
+            logout()
+        } catch {
+            Haptic.error()
+        }
+    }
+
+    private var number: String { profile.number.isEmpty ? savedNumber : profile.number }
+
+    /// Bir hissə oxunmadı: son saxlanan qiymətlər (eyni semestr).
+    private func cachedGrades(_ yt: String?) -> Bool {
+        guard let snap = OfflineCache.load(number: number), !snap.grades.isEmpty else { return false }
+        if let yt, !yt.isEmpty, yt != snap.gradeSel { return false }
+        if gradeSems.isEmpty { gradeSems = snap.gradeSems }
+        gradeSel = snap.gradeSel
+        grades = snap.grades
+        gradesError = t("Portal cavab vermədi — son saxlanan nüsxə göstərilir (\(OfflineCache.savedText(snap.savedAt)))",
+                        "The portal did not respond — showing the last saved copy (\(OfflineCache.savedText(snap.savedAt)))")
+        return true
     }
 
     func login(_ number: String, _ password: String, remember: Bool) async throws {
@@ -83,7 +142,13 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(number, forKey: "lastNumber")
         if remember { Keychain.save(number, password) } else { Keychain.clear() }
         restoreError = ""
+        offline = false
+        offlineSavedAt = nil
         loggedIn = true
+        OfflineCache.update(number: number) { $0.profile = p }
+        TimetableStore.shared.load(number: number, group: p.group)
+        LibraryDue.loadState()
+        Task { await LibraryDue.sync() }
         Usage.shared.setUser(p)
         UserDefaults.standard.set(Cloud.targets(p), forKey: "ann_targets")
         Task { await AnnStore.shared.load(p) }
@@ -95,6 +160,12 @@ final class AppState: ObservableObject {
 
     func logout() {
         Keychain.clear()
+        OfflineCache.clear()
+        SecureStore.wipe()
+        LibraryDue.clear()
+        TimetableStore.shared.reset()
+        WidgetData.clear()
+        offline = false; offlineSavedAt = nil
         Updates.clear()
         Notifier.cancelAll()
         Classroom.clearOnLogout()
@@ -122,6 +193,7 @@ final class AppState: ObservableObject {
     func refreshHome() async {
         if let html = try? await Portal.shared.fetch("index.php"), let p = await offMain({ Parsers.profile(html) }) {
             profile = p
+            OfflineCache.update(number: profile.number) { $0.profile = p }
         }
         await ensureMonth(Date(), force: true)
         let tomorrow = Day.add(1, to: Date())
@@ -154,6 +226,10 @@ final class AppState: ObservableObject {
             loadedMonths.insert(mk)
             scheduleError = ""
             rescheduleReminders()
+            let from = Day.key(Day.add(-7, to: Date()))
+            let keep = lessons.filter { $0.key >= from }
+            OfflineCache.update(number: profile.number) { $0.lessons = keep }
+            WidgetData.publish(lessons)
         } catch is CancellationError {
         } catch {
             scheduleError = error.localizedDescription
@@ -176,7 +252,7 @@ final class AppState: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                gradesError = error.localizedDescription
+                if !cachedGrades(nil) { gradesError = error.localizedDescription }
                 return
             }
         }
@@ -192,7 +268,13 @@ final class AppState: ObservableObject {
             parsed = await offMain { Parsers.extractAjaxData(body).flatMap { Parsers.grades($0) } }
         }
         guard yt == gradeSel else { return }          // bu arada başqa semestr seçilib
-        if let parsed { grades = parsed } else { gradesError = t("Qiymətlər oxunmadı. Aşağı çəkib yenidən yoxla.", "Grades could not be loaded. Pull down to retry.") }
+        if let parsed {
+            grades = parsed
+            let sems = gradeSems
+            OfflineCache.update(number: profile.number) { $0.grades = parsed; $0.gradeSel = yt; $0.gradeSems = sems }
+        } else if !cachedGrades(yt) {
+            gradesError = t("Qiymətlər oxunmadı. Aşağı çəkib yenidən yoxla.", "Grades could not be loaded. Pull down to retry.")
+        }
     }
 
     // MARK: jurnal
@@ -214,6 +296,7 @@ final class AppState: ObservableObject {
                 journalDefault = def.value
                 journalDefaultCourses = parsed
                 if journalSel.isEmpty { journalSel = def.value }
+                OfflineCache.update(number: profile.number) { $0.journal = parsed; $0.journalSel = def.value; $0.journalSems = sems }
             }
             let want = value ?? journalSel
             journalSel = want
@@ -225,7 +308,15 @@ final class AppState: ObservableObject {
             if let parsed { journal = parsed } else { journal = []; journalError = t("Bu semestrin jurnalı oxunmadı", "This semester's journal could not be loaded") }
         } catch is CancellationError {
         } catch {
-            journalError = error.localizedDescription
+            if journal.isEmpty, let snap = OfflineCache.load(number: number), !snap.journal.isEmpty {
+                if journalSems.isEmpty { journalSems = snap.journalSems }
+                journalSel = snap.journalSel
+                journal = snap.journal
+                journalError = t("Portal cavab vermədi — son saxlanan nüsxə göstərilir (\(OfflineCache.savedText(snap.savedAt)))",
+                                 "The portal did not respond — showing the last saved copy (\(OfflineCache.savedText(snap.savedAt)))")
+            } else {
+                journalError = error.localizedDescription
+            }
         }
     }
 
@@ -234,7 +325,8 @@ final class AppState: ObservableObject {
     /// Dərs xatırlatmalarını yenidən planlaşdır (cədvəl yüklənəndə və tənzimləmə dəyişəndə).
     func rescheduleReminders() {
         let l = lessons, before = Prefs.shared.remindBefore, on = Prefs.shared.reminders && loggedIn
-        Task.detached { await Notifier.scheduleLessons(l, before: before, enabled: on) }
+        let tt = TimetableStore.shared.entries
+        Task.detached { await Notifier.scheduleLessons(l, before: before, enabled: on, timetable: tt) }
     }
 
     /// Öz ad günüdür? birth = "dd.MM.yyyy"

@@ -2,8 +2,10 @@ import SwiftUI
 
 /// "Təhsil" tab-ı: qiymətlər, jurnal, transkript, tədris planı, dərs qeydiyyatı.
 struct EducationView: View {
+    @ObservedObject private var nav = QuickNav.shared
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $nav.eduPath) {
             ScrollView {
                 VStack(spacing: 12) {
                     NavigationLink { GradesView() } label: {
@@ -38,6 +40,7 @@ struct EducationView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .navigationTitle(t("Təhsil", "Study"))
+            .navigationDestination(for: QuickRoute.self) { QuickDestination(route: $0) }
         }
     }
 }
@@ -45,8 +48,10 @@ struct EducationView: View {
 // MARK: - Transkript
 
 struct TranscriptView: View {
+    @EnvironmentObject private var app: AppState
     @State private var key = 0
     @State private var semIndex: Int?
+    @State private var share: ShareItem?
 
     var body: some View {
         ScrollView {
@@ -60,6 +65,7 @@ struct TranscriptView: View {
         .background(AppBackground())
         .navigationTitle(t("Transkript", "Transcript"))
         .track("transcript")
+        .sheet(item: $share) { ActivitySheet(items: $0.items).presentationDetents([.medium, .large]) }
         .refreshable { Haptic.soft(); key += 1 }
     }
 
@@ -90,6 +96,17 @@ struct TranscriptView: View {
             .padding(18)
             .glassCard(cornerRadius: 26, tint: C.purple.opacity(0.14))
             .appear(0)
+
+            Button {
+                Haptic.tap()
+                Usage.shared.action("transcript_pdf")
+                if let url = TranscriptPDF.file(tr, profile: app.profile) { share = ShareItem(items: [url]) }
+            } label: {
+                Label(t("PDF kimi paylaş / çap et", "Share / print as PDF"), systemImage: "doc.richtext")
+                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+            }
+            .glassButton()
+            .appear(1)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {

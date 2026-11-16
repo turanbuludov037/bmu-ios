@@ -24,9 +24,11 @@ struct HomeView: View {
                         .appear(0)
                     }
 
+                    if app.offline { OfflineBanner().appear(0) }
                     HeroCard().appear(1)
                     AnnouncementBanner().appear(2)
                     NextLessonCard().appear(2)
+                    LibraryDueCard().appear(2)
                     QuickTiles().appear(3)
 
                     SectionHeader(title: t("Bu gün", "Today"), subtitle: Day.title(Date())).appear(4)
@@ -206,6 +208,35 @@ private struct NextLessonCard: View {
     }
 }
 
+// MARK: - İnternetsiz rejim
+
+struct OfflineBanner: View {
+    @EnvironmentObject private var app: AppState
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wifi.slash").font(.title3).foregroundStyle(C.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("İnternetsiz rejim", "Offline mode")).font(.subheadline.weight(.semibold))
+                Text(t("Son saxlanan məlumat göstərilir", "Showing the last saved data")
+                     + (app.offlineSavedAt.map { " · " + OfflineCache.savedText($0) } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button {
+                Haptic.tap()
+                Task { await app.goOnline() }
+            } label: {
+                if app.reconnecting { ProgressView().controlSize(.small) } else { Text(t("Qoşul", "Retry")).font(.subheadline.weight(.semibold)) }
+            }
+            .glassButton()
+            .disabled(app.reconnecting)
+        }
+        .padding(14)
+        .glassCard(cornerRadius: 22, tint: C.orange.opacity(0.15))
+    }
+}
+
 // MARK: - Sürətli keçidlər
 
 private struct QuickTiles: View {
@@ -246,7 +277,7 @@ struct DayLessons: View {
                 }
             } else {
                 ForEach(Array(list.enumerated()), id: \.element.id) { i, l in
-                    LessonRow(lesson: l, isToday: Day.cal.isDateInToday(date)).appear(i).scrollFx()
+                    LessonRow(lesson: l, isToday: Day.cal.isDateInToday(date), date: date).appear(i).scrollFx()
                 }
             }
         }

@@ -5,6 +5,7 @@ struct ProfileView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var prefs: Prefs
     @State private var confirmLogout = false
+    @State private var showIntro = false
 
     private var version: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -53,6 +54,13 @@ struct ProfileView: View {
 
                     SettingsBlock().appear(3)
 
+                    Button { Haptic.tap(); showIntro = true } label: {
+                        NavRow(icon: "sparkles", color: C.purple, title: t("Tətbiqlə tanışlıq", "App tour"),
+                               subtitle: t("Nə edə biləcəyini qısaca göstərir", "A quick look at what you can do"))
+                    }
+                    .buttonStyle(PressStyle())
+                    .appear(3)
+
                     Button(role: .destructive) {
                         Haptic.tap(); confirmLogout = true
                     } label: {
@@ -71,6 +79,7 @@ struct ProfileView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .navigationTitle(t("Profil", "Profile"))
+            .fullScreenCover(isPresented: $showIntro) { IntroView { showIntro = false } }
             .confirmationDialog(t("Hesabdan çıxılsın?", "Sign out?"), isPresented: $confirmLogout, titleVisibility: .visible) {
                 Button(t("Çıxış", "Sign out"), role: .destructive) { app.logout() }
                 Button(t("Ləğv et", "Cancel"), role: .cancel) {}
@@ -210,6 +219,16 @@ private struct SettingsBlock: View {
                     }
                     .font(.subheadline)
                 }
+                Divider().padding(.vertical, 4)
+                Toggle(isOn: $prefs.hideInSwitcher) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("Məzmunu gizlət", "Hide content")).font(.subheadline)
+                        Text(t("Son açılan tətbiqlər siyahısında tətbiqin içi görünmür", "The app's content is hidden in the app switcher"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(C.indigo)
+                .onChange(of: prefs.hideInSwitcher) { _, _ in Haptic.select() }
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: prefs.reminders)

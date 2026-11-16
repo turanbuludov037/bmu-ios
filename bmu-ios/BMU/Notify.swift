@@ -16,7 +16,7 @@ enum Notifier {
     }
 
     /// Növbəti 7 günün dərsləri üçün xatırlatma (iOS ən çox 64 gözləyən bildirişə icazə verir — 50 ilə məhdudlaşdırırıq).
-    static func scheduleLessons(_ lessons: [String: [Lesson]], before: Int, enabled: Bool) async {
+    static func scheduleLessons(_ lessons: [String: [Lesson]], before: Int, enabled: Bool, timetable: [TtEntry] = []) async {
         let center = UNUserNotificationCenter.current()
         let old = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("lesson-") }
         center.removePendingNotificationRequests(withIdentifiers: old)
@@ -29,8 +29,9 @@ enum Notifier {
                 guard let at = Day.cal.date(byAdding: .minute, value: Day.minutes(l.start) - before, to: day), at > now else { continue }
                 let c = UNMutableNotificationContent()
                 c.title = l.title
+                let room = TimetableStore.match(timetable, day: isoWeekday(day), lesson: l).flatMap { Room.of($0.room) }
                 c.body = t("\(before) dəqiqəyə başlayır · \(l.start)–\(l.end) · \(l.typeLabel)",
-                           "Starts in \(before) min · \(l.start)–\(l.end) · \(l.typeLabel)")
+                           "Starts in \(before) min · \(l.start)–\(l.end) · \(l.typeLabel)") + (room.map { " · " + $0.label } ?? "")
                 c.sound = .default
                 c.threadIdentifier = "lessons"
                 let comps = Day.cal.dateComponents([.year, .month, .day, .hour, .minute], from: at)
@@ -97,6 +98,7 @@ enum Updates {
         await checkAnnouncements()
         guard enabled else { return }
         _ = await check()
+        if Keychain.load() != nil { await LibraryDue.sync() }
     }
 
     // MARK: yeni elan bildirişi (push əvəzinə: iOS arxa planda yoxlayır)
@@ -242,6 +244,33 @@ enum Updates {
         }
         let st = msgs.isEmpty ? "same" : "n:\(msgs.count)"
         setStatus(st)
+        await examWarning(snap)
         return st
+    }
+
+    // MARK: semestr sonu: finaldan 17-dən çox bal lazım olan fənlər (həftədə bir)
+
+    private static let warnMonths: Set<Int> = [12, 5]
+
+    private static func examWarning(_ snap: Snapshot) async {
+        let today = Date()
+        guard warnMonths.contains(Day.cal.component(.month, from: today)) else { return }
+        let last = UserDefaults.standard.double(forKey: "exam_warned_at")
+        if today.timeIntervalSince1970 - last < 7 * 24 * 3600 { return }
+        let rows = snap.grades.map { GradeRow(code: $0.key, title: $0.value.title, akts: 0, missed: "", scores: $0.value.s) }
+        let risks = rows.filter { GradeCalc.exam($0) == nil && !GradeCalc.noEntryYet($0) && !GradeCalc.isSafe($0) }
+            .sorted { (GradeCalc.examNeed($0) ?? 99) > (GradeCalc.examNeed($1) ?? 99) }
+        guard !risks.isEmpty else { return }
+        UserDefaults.standard.set(today.timeIntervalSince1970, forKey: "exam_warned_at")
+        let lines = risks.map { r -> String in
+            let name = r.title.isEmpty ? r.code : r.title
+            if let n = GradeCalc.examNeed(r) { return t("\(name): finaldan minimum \(n) bal lazımdır", "\(name): you need at least \(n) on the final") }
+            return t("\(name): finaldan 50 bal belə 51-ə çatmır", "\(name): even 50 on the final won't reach 51")
+        }
+        let min = GradeRules.examMin
+        await Notifier.show(id: "exam-warning", title: risks.count == 1
+                            ? t("Final: 1 fənn üçün \(min)-dən çox bal lazımdır", "Final: 1 course needs more than \(min)")
+                            : t("Final: \(risks.count) fənn üçün \(min)-dən çox bal lazımdır", "Final: \(risks.count) courses need more than \(min)"),
+                            body: lines.prefix(6).joined(separator: "\n"))
     }
 }

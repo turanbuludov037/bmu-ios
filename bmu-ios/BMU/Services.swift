@@ -3,8 +3,10 @@ import QuickLook
 
 /// "Xidmətlər" tab-ı.
 struct ServicesView: View {
+    @ObservedObject private var nav = QuickNav.shared
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $nav.servicesPath) {
             ScrollView {
                 VStack(spacing: 12) {
                     NavigationLink { AnnouncementsView() } label: {
@@ -51,6 +53,7 @@ struct ServicesView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .navigationTitle(t("Xidmətlər", "Services"))
+            .navigationDestination(for: QuickRoute.self) { QuickDestination(route: $0) }
         }
     }
 }

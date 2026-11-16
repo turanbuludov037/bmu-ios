@@ -3,6 +3,7 @@ import UserNotifications
 
 @main
 struct BMUApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var app = AppState()
     @StateObject private var prefs = Prefs.shared
     @StateObject private var lock = AppLock.shared
@@ -23,7 +24,7 @@ struct BMUApp: App {
                 .overlay {
                     if lock.locked && app.loggedIn {
                         LockView().transition(.opacity.combined(with: .scale(scale: 1.05)))
-                    } else if phase != .active && prefs.lock {
+                    } else if phase != .active && (prefs.lock || prefs.hideInSwitcher) {
                         // tətbiqlər siyahısında məzmun görünməsin
                         ZStack { AppBackground(); LogoBadge(size: 90) }
                     }
@@ -32,6 +33,14 @@ struct BMUApp: App {
                 .onAppear {
                     prefs.applyTheme()
                     Updates.scheduleRefresh()
+                    QuickNav.installShortcuts()
+                }
+                .onChange(of: prefs.lang) { _, _ in
+                    QuickNav.installShortcuts()
+                    if app.loggedIn { WidgetData.publish(app.lessons) }
+                }
+                .onOpenURL { url in
+                    if url.scheme == "mybeu" { QuickNav.shared.pending = url.host ?? "schedule" }
                 }
         }
         .onChange(of: phase) { _, p in
@@ -44,6 +53,7 @@ struct BMUApp: App {
             case .active:
                 lock.becameActive()
                 Usage.shared.resume()
+                if app.offline { Task { await app.goOnline() } }
                 if app.loggedIn {
                     Task { await Updates.checkIfDue() }
                     Task.detached { await Cloud.shared.setOnline(true) }
@@ -104,6 +114,9 @@ struct SplashView: View {
 
 struct MainTabs: View {
     @EnvironmentObject private var app: AppState
+    @ObservedObject private var nav = QuickNav.shared
+    @AppStorage("intro_seen") private var introSeen = false
+    @State private var showIntro = false
 
     var body: some View {
         TabView(selection: $app.tab) {
@@ -131,6 +144,12 @@ struct MainTabs: View {
         .onAppear {
             Usage.shared.homeReady()
             Usage.shared.screen(MainTabs.names[app.tab] ?? "home")
+            nav.perform(app)
+            if !introSeen { showIntro = true }
+        }
+        .onChange(of: nav.pending) { _, p in if p != nil { nav.perform(app) } }
+        .fullScreenCover(isPresented: $showIntro) {
+            IntroView { introSeen = true; showIntro = false }
         }
     }
 

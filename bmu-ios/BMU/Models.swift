@@ -1,6 +1,6 @@
 import Foundation
 
-struct Profile: Sendable {
+struct Profile: Sendable, Codable {
     var number = "", fullName = "", birth = ""
     var program = "", programLang = "", course = "", group = ""
     var advisor = "", status = "", tuitionDebt = "", advance = "", dormDebt = ""
@@ -12,8 +12,8 @@ struct Profile: Sendable {
     }
 }
 
-struct Lesson: Identifiable, Hashable, Sendable {
-    let id = UUID()
+struct Lesson: Identifiable, Hashable, Sendable, Codable {
+    var id = UUID()
     let start: String, end: String, code: String, title: String, type: String
     let count: Int
 
@@ -35,14 +35,14 @@ struct Lesson: Identifiable, Hashable, Sendable {
     }
 }
 
-struct Semester: Identifiable, Hashable, Sendable {
+struct Semester: Identifiable, Hashable, Sendable, Codable {
     var id: String { value }
     let value: String, label: String, selected: Bool
 }
 
 /// scores — portal sütunları: SDF1, SDF2, SEM, LAB, TSI, IGB, SSI, ƏI, TI, ORT (boş ola bilər).
 /// n / m / l — mühazirə, məşğələ, laboratoriya bölmələri (boşdursa o hissə yoxdur).
-struct GradeRow: Identifiable, Sendable {
+struct GradeRow: Identifiable, Sendable, Codable {
     var id: String { code }
     let code: String, title: String, akts: Int, missed: String
     let scores: [String: String]
@@ -52,12 +52,12 @@ struct GradeRow: Identifiable, Sendable {
 
 let OTHER_SCORES = ["SDF2", "SEM", "LAB", "TSI", "IGB", "SSI", "ƏI", "TI", "ORT"]
 
-struct JournalRow: Identifiable, Sendable {
+struct JournalRow: Identifiable, Sendable, Codable {
     var id: String { label }
     let label: String, attended: Int, missed: Int, hours: Int, limit: Double
 }
 
-struct JournalCourse: Identifiable, Sendable {
+struct JournalCourse: Identifiable, Sendable, Codable {
     var id: String { code }
     let code: String, title: String, teacher: String
     let rows: [JournalRow]
@@ -258,27 +258,27 @@ struct Registration: Sendable {
     let totalAkts: Int
 }
 
-struct TranscriptRow: Identifiable, Sendable {
-    let id = UUID()
+struct TranscriptRow: Identifiable, Sendable, Codable {
+    var id = UUID()
     let code: String, title: String, hours: String
     let credit: Int
     let score: String, letter: String, repeatMark: String
 }
 
-struct TranscriptSem: Identifiable, Sendable {
-    let id = UUID()
+struct TranscriptSem: Identifiable, Sendable, Codable {
+    var id = UUID()
     let year: String, year2: String, no: String
     let rows: [TranscriptRow]
     let sUomg: String, uomg: String, sqk: String, tak: String, tqk: String
     var label: String { "\(year)–\(year2) · \(no == "1" ? t("Payız", "Fall") : no == "2" ? t("Yaz", "Spring") : t("Yay", "Summer"))" }
 }
 
-struct KV: Identifiable, Sendable {
+struct KV: Identifiable, Sendable, Codable {
     var id: String { key }
     let key: String, value: String
 }
 
-struct Transcript: Sendable {
+struct Transcript: Sendable, Codable {
     let sems: [TranscriptSem]
     let uomg: String, credits: String
     let header: [KV]

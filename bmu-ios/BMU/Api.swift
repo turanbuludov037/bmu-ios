@@ -9,9 +9,19 @@ enum Api {
     // MARK: təhsil
 
     static func transcript() async throws -> Transcript {
-        let html = try await portal.fetch("index.php?mod=transkript")
-        guard let r = await offMain({ Parsers.transcript(html) }) else { throw fail("Transkript oxunmadı", "Transcript could not be loaded") }
-        return r
+        let number = UserDefaults.standard.string(forKey: "lastNumber") ?? ""
+        do {
+            let html = try await portal.fetch("index.php?mod=transkript")
+            guard let r = await offMain({ Parsers.transcript(html) }) else { throw fail("Transkript oxunmadı", "Transcript could not be loaded") }
+            await MainActor.run { OfflineCache.update(number: number) { $0.transcript = r } }
+            return r
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // internet yoxdur: son saxlanan transkript
+            if let saved = await MainActor.run(body: { OfflineCache.load(number: number)?.transcript }) { return saved }
+            throw error
+        }
     }
 
     static func curriculum() async throws -> Curriculum {

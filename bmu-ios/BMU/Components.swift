@@ -20,6 +20,8 @@ struct SectionHeader: View {
 struct LessonRow: View {
     let lesson: Lesson
     var isToday = false
+    var date: Date? = nil
+    @ObservedObject private var tt = TimetableStore.shared
 
     private var color: Color {
         switch lesson.type {
@@ -55,6 +57,14 @@ struct LessonRow: View {
                     Text(lesson.typeLabel).font(.caption)
                 }
                 .foregroundStyle(.secondary)
+                if let date, let e = tt.entry(for: date, lesson: lesson) {
+                    let room = Room.of(e.room)
+                    let parts = [room?.short, e.teacher.isEmpty ? nil : e.teacher].compactMap { $0 }
+                    if !parts.isEmpty {
+                        Label(parts.joined(separator: " · "), systemImage: room != nil ? "mappin.and.ellipse" : "person.fill")
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
             }
             Spacer(minLength: 0)
             if isNow {

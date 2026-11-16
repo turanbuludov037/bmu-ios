@@ -26,6 +26,8 @@ final class Prefs: ObservableObject {
     @Published var remindBefore: Int { didSet { d.set(remindBefore, forKey: "remindBefore") } }
     /// Qiymət və qaib dəyişəndə bildiriş
     @Published var updates: Bool { didSet { d.set(updates, forKey: "updates") } }
+    /// Son tətbiqlər siyahısında məzmunu gizlət
+    @Published var hideInSwitcher: Bool { didSet { d.set(hideInSwitcher, forKey: "hideInSwitcher") } }
     /// Tətbiqdə göstərilən öz profil şəkli (yalnız bu cihazda)
     @Published var customPhoto: Data? { didSet { d.set(customPhoto, forKey: "customPhoto") } }
 
@@ -39,6 +41,7 @@ final class Prefs: ObservableObject {
         remindBefore = d.object(forKey: "remindBefore") as? Int ?? 10
         updates = d.object(forKey: "updates") as? Bool ?? true
         customPhoto = d.data(forKey: "customPhoto")
+        hideInSwitcher = d.object(forKey: "hideInSwitcher") as? Bool ?? true
     }
 
     /// Tema bütün pəncərələrə (açılan vərəqlər də daxil) tətbiq olunur.

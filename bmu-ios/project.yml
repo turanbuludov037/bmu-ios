@@ -14,8 +14,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "2.0"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "2.1"
+    CURRENT_PROJECT_VERSION: "3"
     DEVELOPMENT_TEAM: ""
 
 targets:
@@ -24,8 +24,14 @@ targets:
     platform: iOS
     sources:
       - path: BMU
+      - path: Shared
     dependencies:
       - package: SwiftSoup
+      - target: BMUWidget
+    entitlements:
+      path: BMU/BMU.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nexora.beueduaz]
     info:
       path: BMU/Info.plist
       properties:
@@ -37,6 +43,12 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: myBEU tətbiqini Face ID ilə kilidləmək üçün
+        NSCalendarsFullAccessUsageDescription: Dərs cədvəlini telefonun təqviminə köçürmək və köhnə köçürməni yeniləmək üçün
+        NSCalendarsUsageDescription: Dərs cədvəlini telefonun təqviminə köçürmək üçün
+        NSPhotoLibraryUsageDescription: Dərs cədvəlinin şəklini seçmək üçün
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nexora.beueduaz
+            CFBundleURLSchemes: [mybeu]
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.nexora.beueduaz.refresh]
         CFBundleDevelopmentRegion: az
@@ -50,6 +62,32 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_PREVIEWS: YES
+
+  BMUWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: BMUWidget
+      - path: Shared
+    entitlements:
+      path: BMUWidget/BMUWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nexora.beueduaz]
+    info:
+      path: BMUWidget/Info.plist
+      properties:
+        CFBundleDisplayName: myBEU
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nexora.beueduaz.widget
+        PRODUCT_NAME: BMUWidget
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
 
 schemes:
   BMU:
