@@ -18,6 +18,9 @@ final class AppState: ObservableObject {
     // profil
     @Published var profile = Profile()
     @Published var photo: UIImage?
+    @Published var birthdays: Int?
+    /// Seçilmiş tab (dil dəyişəndə ekran yenidən qurulur, tab yerində qalsın)
+    @Published var tab = 0
 
     // cədvəl: "yyyy-MM-dd" → dərslər
     @Published var lessons: [String: [Lesson]] = [:]
@@ -54,7 +57,7 @@ final class AppState: ObservableObject {
             try await login(c.0, c.1, remember: true)
         } catch PortalError.wrongCredentials {
             Keychain.clear()
-            restoreError = "Saxlanmış şifrə köhnəlib, yenidən daxil olun"
+            restoreError = t("Saxlanmış şifrə köhnəlib, yenidən daxil olun", "Saved password is outdated, please sign in again")
         } catch {
             restoreError = error.localizedDescription
         }
@@ -62,25 +65,29 @@ final class AppState: ObservableObject {
     }
 
     func login(_ number: String, _ password: String, remember: Bool) async throws {
-        if number.isEmpty || password.isEmpty { throw PortalError.message("Tələbə nömrəsini və şifrəni daxil edin") }
+        if number.isEmpty || password.isEmpty { throw PortalError.message(t("Tələbə nömrəsini və şifrəni daxil edin", "Enter your student number and password")) }
         let html = try await Portal.shared.login(number, password)
         var prof = await offMain { Parsers.profile(html) }
         if prof == nil {
             let index = try await Portal.shared.fetch("index.php")
             prof = await offMain { Parsers.profile(index) }
         }
-        guard let p = prof else { throw PortalError.message("Giriş oldu, amma profil məlumatı oxunmadı") }
+        guard let p = prof else { throw PortalError.message(t("Giriş oldu, amma profil məlumatı oxunmadı", "Signed in, but the profile could not be read")) }
         profile = p
         UserDefaults.standard.set(number, forKey: "lastNumber")
         if remember { Keychain.save(number, password) } else { Keychain.clear() }
         restoreError = ""
         loggedIn = true
         Task { await loadPhoto() }
-        Task { await ensureMonth(Date()) }
+        Task { await ensureMonth(Date()); await ensureMonth(Day.add(7, to: Date())) }
+        if remember { Task { await Updates.checkIfDue() } }
     }
 
     func logout() {
         Keychain.clear()
+        Updates.clear()
+        Notifier.cancelAll()
+        birthdays = nil; tab = 0
         Task { await Portal.shared.logout() }
         profile = Profile(); photo = nil
         lessons = [:]; loadedMonths = []; loadingMonths = []
@@ -91,6 +98,7 @@ final class AppState: ObservableObject {
 
     private func loadPhoto() async {
         guard let home = try? await Portal.shared.fetch("index.php?mod=home") else { return }
+        birthdays = await offMain { Parsers.birthdays(home) }
         guard let path = await offMain({ Parsers.photoPath(home) }) else { return }
         guard let data = try? await Portal.shared.fetchData(path), let img = UIImage(data: data) else { return }
         photo = img
@@ -125,12 +133,13 @@ final class AppState: ObservableObject {
         do {
             let body = try await Portal.shared.fetch("load_course_schedule.php?start=\(sk)&end=\(ek)")
             guard let parsed = await offMain({ Parsers.schedule(body) }) else {
-                scheduleError = "Cədvəl oxunmadı"
+                scheduleError = t("Cədvəl oxunmadı", "Schedule could not be loaded")
                 return
             }
             lessons = lessons.filter { $0.key < sk || $0.key >= ek }.merging(parsed) { _, new in new }
             loadedMonths.insert(mk)
             scheduleError = ""
+            rescheduleReminders()
         } catch {
             scheduleError = error.localizedDescription
         }
@@ -146,7 +155,7 @@ final class AppState: ObservableObject {
             do {
                 let page = try await Portal.shared.fetch("index.php?mod=grades")
                 let list = await offMain { Parsers.semesters(page, skip: "1#1") }
-                guard !list.isEmpty else { gradesError = "Semestr siyahısı tapılmadı"; return }
+                guard !list.isEmpty else { gradesError = t("Semestr siyahısı tapılmadı", "Semester list not found"); return }
                 gradeSems = list
                 if gradeSel.isEmpty { gradeSel = (list.first { $0.selected } ?? list[list.count - 1]).value }
             } catch {
@@ -166,7 +175,7 @@ final class AppState: ObservableObject {
             parsed = await offMain { Parsers.extractAjaxData(body).flatMap { Parsers.grades($0) } }
         }
         guard yt == gradeSel else { return }          // bu arada başqa semestr seçilib
-        if let parsed { grades = parsed } else { gradesError = "Qiymətlər oxunmadı. Aşağı çəkib yenidən yoxla." }
+        if let parsed { grades = parsed } else { gradesError = t("Qiymətlər oxunmadı. Aşağı çəkib yenidən yoxla.", "Grades could not be loaded. Pull down to retry.") }
     }
 
     // MARK: jurnal
@@ -181,7 +190,7 @@ final class AppState: ObservableObject {
                 let sems = await offMain { Parsers.semesters(page, skip: "0#0") }
                 let parsed = await offMain { Parsers.journal(page) }
                 guard let def = sems.first(where: { $0.selected }) ?? sems.first, let parsed else {
-                    journalError = "Jurnal oxunmadı"
+                    journalError = t("Jurnal oxunmadı", "Journal could not be loaded")
                     return
                 }
                 journalSems = sems
@@ -196,9 +205,40 @@ final class AppState: ObservableObject {
             let body = try await Portal.shared.ajax("index.php?ajx=1&mod=ejurnal&action=getCourses&ysem=\(want)", referer: "index.php?mod=ejurnal")
             let parsed = await offMain { Parsers.journal(Parsers.extractAjaxData(body) ?? body) }
             guard want == journalSel else { return }
-            if let parsed { journal = parsed } else { journal = []; journalError = "Bu semestrin jurnalı oxunmadı" }
+            if let parsed { journal = parsed } else { journal = []; journalError = t("Bu semestrin jurnalı oxunmadı", "This semester's journal could not be loaded") }
         } catch {
             journalError = error.localizedDescription
         }
+    }
+
+    // MARK: bildirişlər
+
+    /// Dərs xatırlatmalarını yenidən planlaşdır (cədvəl yüklənəndə və tənzimləmə dəyişəndə).
+    func rescheduleReminders() {
+        let l = lessons, before = Prefs.shared.remindBefore, on = Prefs.shared.reminders && loggedIn
+        Task.detached { await Notifier.scheduleLessons(l, before: before, enabled: on) }
+    }
+
+    /// Öz ad günüdür? birth = "dd.MM.yyyy"
+    var isMyBirthday: Bool {
+        let p = profile.birth.split(whereSeparator: { ".-/".contains($0) })
+        guard p.count >= 2, let d = Int(p[0]), let m = Int(p[1]) else { return false }
+        let c = Day.cal.dateComponents([.day, .month], from: Date())
+        return c.day == d && c.month == m
+    }
+
+    /// "Sabahın xeyir, Turan"
+    var greeting: String {
+        let h = Day.cal.component(.hour, from: Date())
+        let g: String
+        switch h {
+        case 5..<12: g = t("Sabahın xeyir", "Good morning")
+        case 12..<18: g = t("Günortan xeyir", "Good afternoon")
+        case 18..<23: g = t("Axşamın xeyir", "Good evening")
+        default: g = t("Gecən xeyrə", "Good night")
+        }
+        // Android-dəki kimi: "Ad soyad" sahəsinin ilk sözü
+        let name = profile.fullName.trimmed.split(separator: " ").first.map(String.init) ?? ""
+        return name.isEmpty ? g : "\(g), \(name)"
     }
 }

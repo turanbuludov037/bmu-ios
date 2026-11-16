@@ -199,3 +199,62 @@ enum Keychain {
         _ = SecItemDelete(q as CFDictionary)
     }
 }
+
+// MARK: - 2-ci mərhələ: portalın JSON API-si və fayl yükləmə
+
+struct PortalFile: Sendable {
+    let data: Data
+    let name: String
+    let isHtml: Bool
+}
+
+extension Portal {
+    private static func enc(_ s: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._*")
+        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+
+    /// index.php?ajx=1&mod=<module>&action=<action>&... → {"CODE":1,"DATA":"<html>"}; CODE != 1 olanda DATA səhv mətnidir.
+    func call(_ module: String, _ action: String, _ params: [(String, String)] = []) async throws -> String {
+        let q = "index.php?ajx=1&mod=\(module)&action=\(action)" + params.map { "&\($0.0)=\(Portal.enc($0.1))" }.joined()
+        return try await json(q, referer: "index.php?mod=\(module)")
+    }
+
+    /// Onlayn xidmət addımı: index.php?ajx=1&mod=onlserv&srv=<n>&action=<ContinueOrder|ConfirmOrder>&...
+    func onlStep(srv: Int, action: String, _ params: [(String, String)]) async throws -> String {
+        let q = "index.php?ajx=1&mod=onlserv&srv=\(srv)&action=\(action)" + params.map { "&\($0.0)=\(Portal.enc($0.1))" }.joined()
+        return try await json(q, referer: "index.php?mod=onlserv&srv=\(srv)")
+    }
+
+    /// {"CODE":1,"DATA":"..."} cavabı: uğurda DATA, səhvdə portalın mesajı.
+    private func json(_ q: String, referer: String) async throws -> String {
+        let body = try await ajax(q, referer: referer)
+        var s = body.trimmed
+        if s.hasPrefix("\u{FEFF}") { s.removeFirst() }
+        guard let d = s.data(using: .utf8), let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
+            throw PortalError.message(t("Cavab oxunmadı", "Could not read the response"))
+        }
+        let code = (o["CODE"] as? Int) ?? Int("\(o["CODE"] ?? "")") ?? 0
+        let data = (o["DATA"] as? String) ?? ""
+        if code == 1 { return data }
+        let msg = Parsers.plain(data)
+        throw PortalError.message(msg.isEmpty ? t("Əməliyyat alınmadı", "Operation failed") : msg)
+    }
+
+    /// Portal faylını (PDF və s.) sessiya ilə yükləyir. HTML gəlibsə isHtml = true (adi səhifədir).
+    func fetchFile(_ path: String) async throws -> PortalFile {
+        let p = path.hasPrefix("http") ? path : Portal.base + (path.hasPrefix("/") ? String(path.dropFirst()) : path)
+        guard let url = URL(string: p) ?? URL(string: p.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? p) else {
+            throw PortalError.network
+        }
+        let (data, resp) = try await sendData(URLRequest(url: url))
+        let http = resp as? HTTPURLResponse
+        let mime = http?.mimeType ?? ""
+        var name = resp.suggestedFilename ?? url.lastPathComponent
+        if let cd = http?.value(forHTTPHeaderField: "Content-Disposition"), let m = cd.groups(#"filename\*?=(?:UTF-8'')?"?([^";]+)"?"#) {
+            name = m[1].removingPercentEncoding ?? m[1]
+        }
+        if name.isEmpty { name = "fayl" }
+        return PortalFile(data: data, name: name, isHtml: mime.hasPrefix("text/html"))
+    }
+}

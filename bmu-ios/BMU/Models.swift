@@ -17,6 +17,15 @@ struct Lesson: Identifiable, Hashable, Sendable {
     let start: String, end: String, code: String, title: String, type: String
     let count: Int
 
+    /// Ekranda göstərilən növ (açar Azərbaycanca qalır).
+    var typeLabel: String {
+        switch type {
+        case "Laboratoriya": return t("Laboratoriya", "Lab")
+        case "Məşğələ": return t("Məşğələ", "Practice")
+        default: return t("Mühazirə", "Lecture")
+        }
+    }
+
     var symbol: String {
         switch type {
         case "Laboratoriya": return "testtube.2"
@@ -139,9 +148,16 @@ enum Day {
         return f
     }()
 
-    static let weekdays = ["B.e", "Ç.a", "Çər", "C.a", "Cüm", "Şən", "Baz"]
-    static let weekdaysLong = ["Bazar ertəsi", "Çərşənbə axşamı", "Çərşənbə", "Cümə axşamı", "Cümə", "Şənbə", "Bazar"]
-    static let months = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr"]
+    private static var en: Bool { UserDefaults.standard.string(forKey: "lang") == "en" }
+    static var weekdays: [String] { en ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["B.e", "Ç.a", "Çər", "C.a", "Cüm", "Şən", "Baz"] }
+    static var weekdaysLong: [String] {
+        en ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+           : ["Bazar ertəsi", "Çərşənbə axşamı", "Çərşənbə", "Cümə axşamı", "Cümə", "Şənbə", "Bazar"]
+    }
+    static var months: [String] {
+        en ? ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+           : ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr"]
+    }
 
     static func key(_ d: Date) -> String { keyFormatter.string(from: d) }
     static func startOfToday() -> Date { cal.startOfDay(for: Date()) }
@@ -186,5 +202,153 @@ extension String {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return self }
         let ns = self as NSString
         return re.stringByReplacingMatches(in: self, range: NSRange(location: 0, length: ns.length), withTemplate: template)
+    }
+}
+
+// MARK: - Təhsil və xidmətlər (2-ci mərhələ)
+
+struct PlanCourse: Identifiable, Sendable {
+    let id = UUID()
+    let tag: String, title: String, theory: String, practice: String
+    let akts: Int
+    /// passed | failed | current | upcoming
+    let status: String
+}
+
+struct PlanSemester: Identifiable, Sendable {
+    var id: Int { number }
+    let number: Int
+    let courses: [PlanCourse]
+}
+
+struct Curriculum: Sendable {
+    let title: String
+    let semesters: [PlanSemester]
+}
+
+struct RegCourse: Identifiable, Sendable {
+    let id = UUID()
+    let code: String, title: String
+    let akts: Int
+}
+
+struct Registration: Sendable {
+    let term: String
+    let closed: Bool, confirmed: Bool
+    let courses: [RegCourse]
+    let totalAkts: Int
+}
+
+struct TranscriptRow: Identifiable, Sendable {
+    let id = UUID()
+    let code: String, title: String, hours: String
+    let credit: Int
+    let score: String, letter: String, repeatMark: String
+}
+
+struct TranscriptSem: Identifiable, Sendable {
+    let id = UUID()
+    let year: String, year2: String, no: String
+    let rows: [TranscriptRow]
+    let sUomg: String, uomg: String, sqk: String, tak: String, tqk: String
+    var label: String { "\(year)–\(year2) · \(no == "1" ? t("Payız", "Fall") : no == "2" ? t("Yaz", "Spring") : t("Yay", "Summer"))" }
+}
+
+struct KV: Identifiable, Sendable {
+    var id: String { key }
+    let key: String, value: String
+}
+
+struct Transcript: Sendable {
+    let sems: [TranscriptSem]
+    let uomg: String, credits: String
+    let header: [KV]
+}
+
+struct Gate: Identifiable, Sendable {
+    let id = UUID()
+    let date: String, day: String, inTime: String, outTime: String, stay: String
+}
+
+struct LibBook: Identifiable, Sendable {
+    let id = UUID()
+    let title: String, author: String, publisher: String, year: String, href: String
+}
+
+struct LibInv: Identifiable, Sendable {
+    let id = UUID()
+    let number: String, status: String, returnDate: String, place: String
+    let orderForm: [String: String]?
+}
+
+struct LibDetail: Sendable {
+    let fields: [KV]
+    let queueNote: String
+    let inventory: [LibInv]
+}
+
+struct LibRows: Sendable {
+    let rows: [[String]]
+    let empty: String
+}
+
+struct TuitionRow: Identifiable, Sendable {
+    let id = UUID()
+    let year: String, semester: String, extra: String, fee: String, debt: String
+    let totalDebt: String, paid: String, remaining: String, status: String, kind: String
+}
+
+struct DocCat: Identifiable, Sendable {
+    let id = UUID()
+    let name: String
+    let subId: String?, docsCat: String?
+    let parent: String
+}
+
+struct DocLink: Identifiable, Sendable {
+    let id = UUID()
+    let title: String, target: String
+}
+
+struct DocItem: Identifiable, Sendable {
+    let id = UUID()
+    let cells: [String]
+    let links: [DocLink]
+}
+
+struct OnlOrder: Identifiable, Sendable {
+    let id = UUID()
+    let title: String, semester: String, place: String, date: String, status: String, note: String, lang: String
+}
+
+// MARK: - Qaib hesabı (portalın qaydası — Android AbsenceBudget ilə eyni)
+
+enum AbsenceBudget {
+    /// Fənnin ümumi limiti: şöbə limitlərinin cəmi; oxunmayıbsa saatların 25%-i.
+    static func courseLimit(_ c: JournalCourse) -> Double? {
+        let limits = c.rows.map(\.limit)
+        let hours = c.rows.reduce(0) { $0 + $1.hours }
+        if !limits.isEmpty && limits.allSatisfy({ $0 > 0 }) { return limits.reduce(0, +) }
+        if hours > 0 { return Double(hours) * ABSENCE_LIMIT_PERCENT / 100 }
+        return nil
+    }
+    static func missed(_ c: JournalCourse) -> Int { c.rows.reduce(0) { $0 + $1.missed } }
+    static func hours(_ c: JournalCourse) -> Int { c.rows.reduce(0) { $0 + $1.hours } }
+    /// Daha neçə qaib olar (limitə bərabər olmaq icazəlidir: 18.75 → 18).
+    static func left(_ c: JournalCourse) -> Int? {
+        guard let lim = courseLimit(c) else { return nil }
+        return Int((lim + 1e-9).rounded(.down)) - missed(c)
+    }
+    /// 1 qaib neçə faizdir.
+    static func onePercent(_ c: JournalCourse) -> Double {
+        let h = hours(c)
+        return h > 0 ? 100.0 / Double(h) : 0
+    }
+    static func text(_ left: Int) -> String {
+        if left < 0 { return t("limit keçilib", "over the limit") }
+        if left == 0 { return t("limitdəsən — daha qaib olmaz", "at the limit — no more absences") }
+        let classes = left / 2
+        let extra = classes > 0 ? t(" (\(classes) dərs)", " (\(classes) class\(classes == 1 ? "" : "es"))") : t(" (bütöv dərs yox)", " (not a full class)")
+        return t("daha \(left) qaib olar", "\(left) more absence\(left == 1 ? "" : "s") allowed") + extra
     }
 }

@@ -3,33 +3,45 @@ import SwiftUI
 struct ScheduleView: View {
     @EnvironmentObject private var app: AppState
     @State private var day = Day.startOfToday()
+    @State private var direction: Edge = .trailing
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    WeekStrip(day: $day) { app.lessons[Day.key($0)]?.isEmpty == false }
+                    WeekStrip(day: $day, direction: $direction) { app.lessons[Day.key($0)]?.isEmpty == false }
 
                     HStack {
-                        Text(Day.title(day)).font(.headline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Day.title(day)).font(.headline)
+                                .contentTransition(.numericText())
+                            let n = app.lessons[Day.key(day)]?.count ?? 0
+                            Text(n == 0 ? t("dərs yoxdur", "no classes") : t("\(n) dərs", "\(n) class\(n == 1 ? "" : "es")"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Spacer()
                         if !Day.cal.isDateInToday(day) {
-                            Button("Bu gün") { withAnimation(.snappy) { day = Day.startOfToday() } }
+                            Button(t("Bu gün", "Today")) { go(to: Day.startOfToday()) }
                                 .glassButton()
                                 .font(.subheadline.weight(.semibold))
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
                     .padding(.horizontal, 4)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: Day.cal.isDateInToday(day))
 
-                    DayLessons(date: day, emptyText: "Bu gün dərs yoxdur")
+                    DayLessons(date: day, emptyText: t("Bu gün dərs yoxdur", "No classes on this day"))
+                        .id(Day.key(day))
+                        .transition(.asymmetric(insertion: .move(edge: direction).combined(with: .opacity),
+                                                removal: .opacity))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
             .background(AppBackground())
-            .navigationTitle("Cədvəl")
-            .refreshable { await app.ensureMonth(day, force: true) }
+            .navigationTitle(t("Cədvəl", "Schedule"))
+            .refreshable { Haptic.soft(); await app.ensureMonth(day, force: true) }
             .task(id: Day.key(Day.monday(of: day))) {
                 // həftə iki aya düşə bilər: hər ikisini yüklə
                 let monday = Day.monday(of: day)
@@ -39,17 +51,25 @@ struct ScheduleView: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 40).onEnded { v in
                     guard abs(v.translation.width) > abs(v.translation.height) * 1.5 else { return }
-                    withAnimation(.snappy) { day = Day.add(v.translation.width < 0 ? 1 : -1, to: day) }
+                    go(to: Day.add(v.translation.width < 0 ? 1 : -1, to: day))
                 }
             )
         }
     }
+
+    private func go(to d: Date) {
+        direction = d > day ? .trailing : .leading
+        Haptic.select()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { day = d }
+    }
 }
 
-/// Həftə zolağı: B.e … Baz, seçilmiş gün rəngli, dərsi olan günün altında nöqtə.
+/// Həftə zolağı: seçilmiş gün yaylanan şüşə "kapsul" ilə işarələnir, dərsi olan günün altında nöqtə.
 struct WeekStrip: View {
     @Binding var day: Date
+    @Binding var direction: Edge
     let hasLessons: (Date) -> Bool
+    @Namespace private var ns
 
     var body: some View {
         let monday = Day.monday(of: day)
@@ -64,7 +84,7 @@ struct WeekStrip: View {
                 let selected = Day.cal.isDate(d, inSameDayAs: day)
                 let today = Day.cal.isDateInToday(d)
                 Button {
-                    withAnimation(.snappy) { day = d }
+                    select(d)
                 } label: {
                     VStack(spacing: 4) {
                         Text(Day.weekdays[i]).font(.caption2.weight(.medium))
@@ -79,6 +99,7 @@ struct WeekStrip: View {
                     .background {
                         if selected {
                             RoundedRectangle(cornerRadius: 14, style: .continuous).fill(C.btn.gradient)
+                                .matchedGeometryEffect(id: "sel", in: ns)
                         }
                     }
                     .contentShape(Rectangle())
@@ -95,7 +116,11 @@ struct WeekStrip: View {
         .glassCard(cornerRadius: 24)
     }
 
-    private func shift(_ n: Int) {
-        withAnimation(.snappy) { day = Day.add(n, to: day) }
+    private func select(_ d: Date) {
+        direction = d > day ? .trailing : .leading
+        Haptic.select()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) { day = d }
     }
+
+    private func shift(_ n: Int) { select(Day.add(n, to: day)) }
 }

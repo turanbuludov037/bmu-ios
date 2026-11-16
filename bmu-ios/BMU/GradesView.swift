@@ -5,43 +5,45 @@ struct GradesView: View {
     @State private var open: GradeRow?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if !app.gradeSems.isEmpty {
-                        SemesterMenu(semesters: app.gradeSems, selected: app.gradeSel) { v in
-                            Task { await app.loadGrades(v) }
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if !app.gradeSems.isEmpty {
+                    SemesterMenu(semesters: app.gradeSems, selected: app.gradeSel) { v in
+                        Task { await app.loadGrades(v) }
                     }
-                    if app.gradesLoading && app.grades.isEmpty { LoadingCard(text: "Qiymətlər yüklənir…") }
-                    if !app.gradesError.isEmpty {
-                        ErrorCard(text: app.gradesError) { Task { await app.loadGrades(app.gradeSel.isEmpty ? nil : app.gradeSel) } }
-                    }
-                    if !app.grades.isEmpty {
-                        GradesSummary(rows: app.grades)
-                        Text("Fənnə toxun — bütün balları və imtahandan nə qədər lazım olduğunu gör.")
-                            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
-                    } else if !app.gradesLoading && app.gradesError.isEmpty && !app.gradeSems.isEmpty {
-                        EmptyCard(icon: "tray", text: "Bu semestrdə qiymət yoxdur")
-                    }
-                    ForEach(app.grades) { r in
-                        Button { open = r } label: { GradeCard(row: r) }
-                            .buttonStyle(.plain)
-                    }
+                    .appear(0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                if app.gradesLoading && app.grades.isEmpty { LoadingStack(count: 4, height: 120) }
+                if !app.gradesError.isEmpty {
+                    ErrorCard(text: app.gradesError) { Task { await app.loadGrades(app.gradeSel.isEmpty ? nil : app.gradeSel) } }
+                }
+                if !app.grades.isEmpty {
+                    GradesSummary(rows: app.grades).appear(1)
+                    Label(t("Fənnə toxun — bütün ballar və imtahandan nə qədər lazım olduğu", "Tap a course — all scores and what you need on the exam"),
+                          systemImage: "hand.tap")
+                        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
+                } else if !app.gradesLoading && app.gradesError.isEmpty && !app.gradeSems.isEmpty {
+                    EmptyCard(icon: "tray", text: t("Bu semestrdə qiymət yoxdur", "No grades this semester"))
+                }
+                ForEach(Array(app.grades.enumerated()), id: \.element.id) { i, r in
+                    Button { Haptic.tap(); open = r } label: { GradeCard(row: r) }
+                        .buttonStyle(PressStyle())
+                        .appear(i + 2)
+                        .scrollFx()
+                }
             }
-            .scrollIndicators(.hidden)
-            .background(AppBackground())
-            .navigationTitle("Qiymətlər")
-            .task { if app.grades.isEmpty && !app.gradesLoading { await app.loadGrades() } }
-            .refreshable { await app.loadGrades(app.gradeSel.isEmpty ? nil : app.gradeSel) }
-            .sheet(item: $open) { r in
-                GradeDetail(row: r)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .background(AppBackground())
+        .navigationTitle(t("Qiymətlər", "Grades"))
+        .task { if app.grades.isEmpty && !app.gradesLoading { await app.loadGrades() } }
+        .refreshable { Haptic.soft(); await app.loadGrades(app.gradeSel.isEmpty ? nil : app.gradeSel) }
+        .sheet(item: $open) { r in
+            GradeDetail(row: r)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -54,11 +56,11 @@ private struct GradesSummary: View {
         let akts = rows.reduce(0) { $0 + $1.akts }
         let passed = rows.filter { GradeCalc.entryNow($0) >= Double(GradeRules.entryMin) }.count
         HStack(spacing: 0) {
-            item("\(rows.count)", "Fənn")
+            item("\(rows.count)", t("Fənn", "Courses"))
             Divider().frame(height: 34)
             item("\(akts)", "AKTS")
             Divider().frame(height: 34)
-            item("\(passed)/\(rows.count)", "Girişi 34+")
+            item("\(passed)/\(rows.count)", t("Girişi 34+", "Entry 34+"))
         }
         .padding(.vertical, 14)
         .glassCard(cornerRadius: 22, tint: C.indigo.opacity(0.12))
@@ -66,7 +68,7 @@ private struct GradesSummary: View {
 
     private func item(_ value: String, _ title: String) -> some View {
         VStack(spacing: 3) {
-            Text(value).font(.title3.weight(.bold).monospacedDigit())
+            Text(value).font(.title3.weight(.bold).monospacedDigit()).contentTransition(.numericText())
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -83,27 +85,28 @@ struct GradeCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(row.title).font(.headline).multilineTextAlignment(.leading).lineLimit(2)
+                    Text(row.title).font(.headline).multilineTextAlignment(.leading).lineLimit(2).foregroundStyle(Color.primary)
                     Text("\(row.code) · \(row.akts) AKTS").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 if let exam { LetterBadge(letter: GradeCalc.letter(entry: entry, exam: exam)) }
             }
-            ScoreBar(value: entry, max: Double(GradeRules.entryMax), mark: Double(GradeRules.entryMin),
-                     color: ok ? C.green : C.indigo)
+            ScoreBar(value: entry, max: Double(GradeRules.entryMax), mark: Double(GradeRules.entryMin), color: ok ? C.green : C.indigo)
             HStack {
-                Text("Giriş: \(fmt(entry)) / \(GradeRules.entryMax)").font(.caption.weight(.semibold))
+                Text(t("Giriş: \(fmt(entry)) / \(GradeRules.entryMax)", "Entry: \(fmt(entry)) / \(GradeRules.entryMax)"))
+                    .font(.caption.weight(.semibold)).foregroundStyle(Color.primary)
                 Spacer()
                 if let exam {
-                    Text("İmtahan: \(fmt(exam)) / \(GradeRules.examMax)").font(.caption).foregroundStyle(.secondary)
+                    Text(t("İmtahan: \(fmt(exam)) / \(GradeRules.examMax)", "Exam: \(fmt(exam)) / \(GradeRules.examMax)")).font(.caption).foregroundStyle(.secondary)
                 } else if ok {
-                    Text("İmtahana buraxılırsan").font(.caption.weight(.medium)).foregroundStyle(C.green)
+                    Text(t("İmtahana buraxılırsan", "Eligible for the exam")).font(.caption.weight(.medium)).foregroundStyle(C.green)
                 } else {
-                    Text("34-ə \(fmt(Double(GradeRules.entryMin) - entry)) bal qalıb").font(.caption).foregroundStyle(.secondary)
+                    Text(t("34-ə \(fmt(Double(GradeRules.entryMin) - entry)) bal qalıb", "\(fmt(Double(GradeRules.entryMin) - entry)) points to 34"))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             if !row.missed.isEmpty && row.missed != "0" {
-                Label("Qaib: \(row.missed)", systemImage: "person.fill.xmark")
+                Label(t("Qaib: \(row.missed)", "Absences: \(row.missed)"), systemImage: "person.fill.xmark")
                     .font(.caption.weight(.medium)).foregroundStyle(C.rose)
             }
         }
@@ -124,8 +127,7 @@ struct GradeDetail: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Giriş balı").font(.headline)
+                    GlassSection(title: t("Giriş balı", "Entry score"), icon: "sum") {
                         ForEach(parts) { p in
                             HStack {
                                 Text(p.key).font(.subheadline.weight(.medium)).frame(width: 52, alignment: .leading)
@@ -136,69 +138,68 @@ struct GradeDetail: View {
                         }
                         Divider()
                         HStack {
-                            Text("Cəmi").font(.subheadline.weight(.bold))
+                            Text(t("Cəmi", "Total")).font(.subheadline.weight(.bold))
                             Spacer()
                             Text("\(fmt(entry)) / \(GradeRules.entryMax)").font(.subheadline.weight(.bold).monospacedDigit())
                         }
                         let open = GradeCalc.entryOpen(row)
                         if open > 0 {
-                            Text("Hələ yazılmayan hissələrdən \(open) bal yığa bilərsən.").font(.caption).foregroundStyle(.secondary)
+                            Text(t("Hələ yazılmayan hissələrdən \(open) bal yığa bilərsən.", "You can still earn \(open) points from parts not yet graded."))
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .padding(16)
-                    .glassCard(cornerRadius: 22)
+                    .appear(0)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("İmtahan").font(.headline)
-                        InfoRow(label: "Semestr sonu (SSİ)", value: row.score("SSI"))
-                        InfoRow(label: "Əlavə imtahan (Əİ)", value: row.score("ƏI"))
-                        InfoRow(label: "Təkrar imtahan (Tİ)", value: row.score("TI"))
-                        InfoRow(label: "Ortalama", value: row.score("ORT"))
+                    GlassSection(title: t("İmtahan", "Exam"), icon: "pencil.and.list.clipboard") {
+                        InfoRow(label: t("Semestr sonu (SSİ)", "Final exam (SSI)"), value: row.score("SSI"))
+                        InfoRow(label: t("Əlavə imtahan (Əİ)", "Additional exam"), value: row.score("ƏI"))
+                        InfoRow(label: t("Təkrar imtahan (Tİ)", "Retake"), value: row.score("TI"))
+                        InfoRow(label: t("Ortalama", "Average"), value: row.score("ORT"))
                         if let exam {
                             Divider()
                             HStack {
-                                Text("Yekun: \(fmt(entry + exam)) bal").font(.subheadline.weight(.bold))
+                                Text(t("Yekun: \(fmt(entry + exam)) bal", "Total: \(fmt(entry + exam)) points")).font(.subheadline.weight(.bold))
                                 Spacer()
                                 LetterBadge(letter: GradeCalc.letter(entry: entry, exam: exam))
                             }
                         }
                     }
-                    .padding(16)
-                    .glassCard(cornerRadius: 22)
+                    .appear(1)
 
                     if exam == nil {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("İmtahandan nə qədər lazımdır?").font(.headline)
+                        GlassSection(title: t("İmtahandan nə qədər lazımdır?", "What do you need on the exam?"), icon: "target") {
                             if entry < Double(GradeRules.entryMin) {
-                                Text("İmtahana buraxılmaq üçün giriş balı ən azı \(GradeRules.entryMin) olmalıdır. Hələ \(fmt(Double(GradeRules.entryMin) - entry)) bal lazımdır.")
+                                Text(t("İmtahana buraxılmaq üçün giriş balı ən azı \(GradeRules.entryMin) olmalıdır. Hələ \(fmt(Double(GradeRules.entryMin) - entry)) bal lazımdır.",
+                                       "You need at least \(GradeRules.entryMin) entry points to sit the exam. \(fmt(Double(GradeRules.entryMin) - entry)) more needed."))
                                     .font(.subheadline).foregroundStyle(.secondary)
                             } else {
                                 ForEach(GradeRules.letters, id: \.0) { item in
                                     HStack {
                                         LetterBadge(letter: item.0).scaleEffect(0.75).frame(width: 34, height: 34)
-                                        Text("\(item.1)+ bal").font(.subheadline)
+                                        Text(t("\(item.1)+ bal", "\(item.1)+ points")).font(.subheadline)
                                         Spacer()
                                         if let need = GradeCalc.neededExam(entry: entry, target: item.1) {
-                                            Text("imtahandan \(need)").font(.subheadline.weight(.semibold))
+                                            Text(t("imtahandan \(need)", "exam \(need)")).font(.subheadline.weight(.semibold))
                                         } else {
-                                            Text("mümkün deyil").font(.subheadline).foregroundStyle(.secondary)
+                                            Text(t("mümkün deyil", "not possible")).font(.subheadline).foregroundStyle(.secondary)
                                         }
                                     }
                                 }
-                                Text("İmtahandan ən azı \(GradeRules.examMin) bal lazımdır.").font(.caption).foregroundStyle(.secondary)
+                                Text(t("İmtahandan ən azı \(GradeRules.examMin) bal lazımdır.", "At least \(GradeRules.examMin) points are required on the exam."))
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        .padding(16)
-                        .glassCard(cornerRadius: 22)
+                        .appear(2)
                     }
                 }
                 .padding(16)
             }
+            .background(AppBackground())
             .navigationTitle(row.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Bağla") { dismiss() }
+                    Button(t("Bağla", "Close")) { dismiss() }
                 }
             }
         }

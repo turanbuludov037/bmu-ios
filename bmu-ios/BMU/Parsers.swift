@@ -8,20 +8,20 @@ enum Parsers {
 
     // MARK: köməkçilər
 
-    private static func tds(_ tr: Element) -> [Element] {
+    static func tds(_ tr: Element) -> [Element] {
         tr.children().array().filter { $0.tagName() == "td" }
     }
 
-    private static func txt(_ e: Element?) -> String {
+    static func txt(_ e: Element?) -> String {
         guard let e = e else { return "" }
         return ((try? e.text()) ?? "").trimmed
     }
 
-    private static func select(_ root: Element, _ css: String) -> [Element] {
+    static func select(_ root: Element, _ css: String) -> [Element] {
         ((try? root.select(css))?.array()) ?? []
     }
 
-    private static func first(_ root: Element, _ css: String) -> Element? {
+    static func first(_ root: Element, _ css: String) -> Element? {
         select(root, css).first
     }
 

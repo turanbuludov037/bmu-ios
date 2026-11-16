@@ -14,8 +14,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "2.0"
+    CURRENT_PROJECT_VERSION: "2"
     DEVELOPMENT_TEAM: ""
 
 targets:
@@ -29,13 +29,18 @@ targets:
     info:
       path: BMU/Info.plist
       properties:
-        CFBundleDisplayName: BMU Mobil
+        CFBundleDisplayName: myBEU
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        NSFaceIDUsageDescription: myBEU tətbiqini Face ID ilə kilidləmək üçün
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.nexora.beueduaz.refresh]
+        CFBundleDevelopmentRegion: az
+        CFBundleLocalizations: [az, en]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nexora.beueduaz

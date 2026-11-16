@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var app: AppState
+    @EnvironmentObject private var prefs: Prefs
     @State private var number = ""
     @State private var password = ""
     @State private var remember = true
@@ -20,14 +21,14 @@ struct LoginView: View {
                     Spacer(minLength: 50)
                     LogoBadge(size: 92)
                     VStack(spacing: 6) {
-                        Text("BMU Mobil").font(.largeTitle.weight(.bold))
-                        Text("my.beu.edu.az hesabınla daxil ol").font(.subheadline).foregroundStyle(.secondary)
+                        Text("myBEU").font(.largeTitle.weight(.bold))
+                        Text(t("my.beu.edu.az hesabınla daxil ol", "Sign in with your my.beu.edu.az account")).font(.subheadline).foregroundStyle(.secondary)
                     }
 
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
                             Image(systemName: "person.text.rectangle").foregroundStyle(C.indigo).frame(width: 22)
-                            TextField("Tələbə nömrəsi", text: $number)
+                            TextField(t("Tələbə nömrəsi", "Student number"), text: $number)
                                 .keyboardType(.numberPad)
                                 .textContentType(.username)
                                 .focused($focus, equals: .number)
@@ -39,9 +40,9 @@ struct LoginView: View {
                             Image(systemName: "lock").foregroundStyle(C.indigo).frame(width: 22)
                             Group {
                                 if showPassword {
-                                    TextField("Şifrə", text: $password)
+                                    TextField(t("Şifrə", "Password"), text: $password)
                                 } else {
-                                    SecureField("Şifrə", text: $password)
+                                    SecureField(t("Şifrə", "Password"), text: $password)
                                 }
                             }
                             .textContentType(.password)
@@ -60,8 +61,8 @@ struct LoginView: View {
 
                         Toggle(isOn: $remember) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Məni xatırla").font(.subheadline.weight(.semibold))
-                                Text("Növbəti dəfə avtomatik daxil olur").font(.caption).foregroundStyle(.secondary)
+                                Text(t("Məni xatırla", "Remember me")).font(.subheadline.weight(.semibold))
+                                Text(t("Növbəti dəfə avtomatik daxil olur", "Signs you in automatically next time")).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         .tint(C.indigo)
@@ -80,7 +81,7 @@ struct LoginView: View {
                     Button(action: submit) {
                         HStack(spacing: 10) {
                             if busy { ProgressView().tint(.white) }
-                            Text(busy ? "Daxil olunur…" : "Daxil ol").font(.headline)
+                            Text(busy ? t("Daxil olunur…", "Signing in…") : t("Daxil ol", "Sign in")).font(.headline)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -89,11 +90,21 @@ struct LoginView: View {
                     .tint(C.btn)
                     .disabled(busy)
 
-                    Label("Şifrən yalnız universitetin saytına göndərilir və yalnız bu iPhone-da saxlanır.", systemImage: "checkmark.shield")
+                    Label(t("Şifrən yalnız universitetin saytına göndərilir və yalnız bu iPhone-da saxlanır.", "Your password is sent only to the university site and stored only on this iPhone."), systemImage: "checkmark.shield")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 4)
+
+                    HStack(spacing: 16) {
+                        Link(t("Parolu unutmusan?", "Forgot password?"), destination: URL(string: "https://my.beu.edu.az/passwForgot")!)
+                        Text("·").foregroundStyle(.secondary)
+                        Button(prefs.lang == "az" ? "English" : "Azərbaycanca") {
+                            Haptic.select()
+                            prefs.lang = prefs.lang == "az" ? "en" : "az"
+                        }
+                    }
+                    .font(.footnote.weight(.semibold))
                 }
                 .padding(.horizontal, 22)
                 .padding(.bottom, 30)
@@ -112,8 +123,12 @@ struct LoginView: View {
         Task {
             do {
                 try await app.login(n, p, remember: remember)
+                AppLock.shared.locked = false          // indicə özü daxil oldu — kilid soruşulmasın
+                Haptic.success()
+                if remember { _ = await Notifier.requestPermission() }
             } catch {
                 self.error = error.localizedDescription
+                Haptic.error()
             }
             busy = false
         }
