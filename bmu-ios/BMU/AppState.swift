@@ -78,6 +78,8 @@ final class AppState: ObservableObject {
         if remember { Keychain.save(number, password) } else { Keychain.clear() }
         restoreError = ""
         loggedIn = true
+        Usage.shared.setUser(p)
+        Task.detached { await Cloud.shared.connect(number: number, password: password, profile: p) }
         Task { await loadPhoto() }
         Task { await ensureMonth(Date()); await ensureMonth(Day.add(7, to: Date())) }
         if remember { Task { await Updates.checkIfDue() } }
@@ -87,6 +89,8 @@ final class AppState: ObservableObject {
         Keychain.clear()
         Updates.clear()
         Notifier.cancelAll()
+        Classroom.clearOnLogout()
+        Task.detached { await Cloud.shared.signOut() }
         birthdays = nil; tab = 0
         Task { await Portal.shared.logout() }
         profile = Profile(); photo = nil

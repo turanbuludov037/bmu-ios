@@ -337,6 +337,7 @@ struct PasswordView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(AppBackground())
         .navigationTitle(t("Parolu dəyiş", "Change password"))
+        .track("password")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -412,6 +413,7 @@ struct EnglishNameView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(AppBackground())
         .navigationTitle(t("İngilis dilində ad", "Name in English"))
+        .track("engname")
         .navigationBarTitleDisplayMode(.inline)
         .task { if !loaded { await load() } }
     }
@@ -536,6 +538,7 @@ struct ContactsView: View {
         }
         .background(AppBackground())
         .navigationTitle(t("Əlaqə məlumatlarım", "My contacts"))
+        .track("contacts")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
     }
@@ -617,6 +620,7 @@ struct PhotoView: View {
         }
         .background(AppBackground())
         .navigationTitle(t("Profil şəkli", "Profile photo"))
+        .track("photo")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: pick) { _, item in
             guard let item else { return }

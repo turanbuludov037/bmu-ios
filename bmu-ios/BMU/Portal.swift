@@ -61,13 +61,24 @@ actor Portal {
     }
 
     private func sendData(_ r: URLRequest) async throws -> (Data, URLResponse) {
+        let started = Date()
+        let comps = r.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        let mod = comps?.queryItems?.first(where: { $0.name == "mod" })?.value
+        let key = String((mod ?? r.url?.lastPathComponent ?? "?").prefix(30))
+        func report(_ ok: Bool) {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            Task { @MainActor in Usage.shared.portal(key, ms: ms, ok: ok) }
+        }
         do {
             let (data, resp) = try await session.data(for: r)
             if let u = resp.url, u.host != Portal.host { throw PortalError.network }
+            report(true)
             return (data, resp)
         } catch let e as PortalError {
+            report(false)
             throw e
         } catch {
+            report(false)
             throw PortalError.network
         }
     }
@@ -197,6 +208,28 @@ enum Keychain {
     static func clear() {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
         _ = SecItemDelete(q as CFDictionary)
+    }
+
+    // MARK: ümumi açar-dəyər (Firebase açarı, Classroom girişi)
+
+    private static let store = "com.nexora.beueduaz.store"
+
+    static func set(_ key: String, _ value: String?) {
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: store, kSecAttrAccount as String: key]
+        _ = SecItemDelete(base as CFDictionary)
+        guard let value else { return }
+        var q = base
+        q[kSecValueData as String] = Data(value.utf8)
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        _ = SecItemAdd(q as CFDictionary, nil)
+    }
+
+    static func get(_ key: String) -> String? {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: store, kSecAttrAccount as String: key,
+                                kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+        return String(data: d, encoding: .utf8)
     }
 }
 

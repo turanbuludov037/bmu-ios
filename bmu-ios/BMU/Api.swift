@@ -139,6 +139,7 @@ enum Api {
             throw fail("Parol dəyişdirilmədi: " + String(Parsers.plain(msg).prefix(150)), "Password was not changed: " + String(Parsers.plain(msg).prefix(150)))
         }
         if Keychain.load() != nil { Keychain.save(number, new) }
+        await Cloud.shared.passwordChanged(number: number, old: old, new: new)
         let text = Parsers.plain(msg)
         return text.isEmpty ? t("Parol dəyişdirildi", "Password changed") : text
     }

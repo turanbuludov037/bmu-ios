@@ -42,6 +42,7 @@ struct JournalView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Jurnal", "Journal"))
+        .track("journal")
         .task { if app.journal.isEmpty && !app.journalLoading { await app.loadJournal() } }
         .refreshable { Haptic.soft(); await app.loadJournal(app.journalSel.isEmpty ? nil : app.journalSel, force: true) }
         .sheet(item: $open) { c in

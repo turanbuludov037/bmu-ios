@@ -107,7 +107,7 @@ struct ErrorCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .glassCard(cornerRadius: 22, tint: C.rose.opacity(0.12))
-        .onAppear { Haptic.error() }
+        .onAppear { Haptic.error(); Usage.shared.error(text) }
     }
 }
 

@@ -22,6 +22,10 @@ struct EducationView: View {
                         NavRow(icon: "list.bullet.rectangle.fill", color: C.rose, title: t("Tədris planı", "Curriculum"),
                                subtitle: t("Keçdiyin və qarşıda olan fənlər", "Passed and upcoming courses"))
                     }.appear(3)
+                    NavigationLink { ClassroomView() } label: {
+                        NavRow(icon: "graduationcap.circle.fill", color: C.teal, title: "Google Classroom",
+                               subtitle: t("Kurslar, tapşırıqlar, son tarixlər, fayllar", "Courses, assignments, deadlines, files"))
+                    }.appear(5)
                     NavigationLink { RegistrationView() } label: {
                         NavRow(icon: "square.and.pencil", color: C.orange, title: t("Dərs qeydiyyatı", "Course registration"),
                                subtitle: t("Bu semestrə yazıldığın fənlər", "Courses you registered for"))
@@ -55,6 +59,7 @@ struct TranscriptView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Transkript", "Transcript"))
+        .track("transcript")
         .refreshable { Haptic.soft(); key += 1 }
     }
 
@@ -168,6 +173,7 @@ struct CurriculumView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Tədris planı", "Curriculum"))
+        .track("curriculum")
         .refreshable { Haptic.soft(); key += 1 }
     }
 }
@@ -315,6 +321,7 @@ struct RegistrationView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Dərs qeydiyyatı", "Registration"))
+        .track("registration")
         .refreshable { Haptic.soft(); key += 1 }
     }
 }

@@ -10,6 +10,7 @@ struct BMUApp: App {
 
     init() {
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        _ = Usage.launchedAt                        // soyuq açılış vaxtının başlanğıcı
     }
 
     var body: some Scene {
@@ -38,9 +39,15 @@ struct BMUApp: App {
             case .background:
                 lock.wentBackground()
                 Updates.scheduleRefresh()
+                Usage.shared.pause()
+                Task.detached { await Cloud.shared.setOnline(false) }
             case .active:
                 lock.becameActive()
-                if app.loggedIn { Task { await Updates.checkIfDue() } }
+                Usage.shared.resume()
+                if app.loggedIn {
+                    Task { await Updates.checkIfDue() }
+                    Task.detached { await Cloud.shared.setOnline(true) }
+                }
             default:
                 break
             }
@@ -67,6 +74,13 @@ struct RootView: View {
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: app.restoring)
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: app.loggedIn)
         .task { await app.restore() }
+        .task {
+            // hər dəqiqə: analitika saxlanır və göndərilir
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                Usage.shared.heartbeat()
+            }
+        }
     }
 }
 
@@ -110,6 +124,15 @@ struct MainTabs: View {
                 .tag(4)
         }
         .modifier(TabBarMinimize())
-        .onChange(of: app.tab) { _, _ in Haptic.select() }
+        .onChange(of: app.tab) { _, tab in
+            Haptic.select()
+            Usage.shared.screen(MainTabs.names[tab] ?? "home")
+        }
+        .onAppear {
+            Usage.shared.homeReady()
+            Usage.shared.screen(MainTabs.names[app.tab] ?? "home")
+        }
     }
+
+    static let names = [0: "home", 1: "schedule", 2: "education", 3: "services", 4: "profile"]
 }

@@ -33,6 +33,7 @@ struct LibraryView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(AppBackground())
         .navigationTitle(t("Kitabxana", "Library"))
+        .track("library")
     }
 
     private func chip(_ i: Int, _ title: String, _ icon: String) -> some View {

@@ -7,6 +7,10 @@ struct ServicesView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    NavigationLink { MatesView() } label: {
+                        NavRow(icon: "person.3.fill", color: C.green, title: t("Qrup yoldaşları", "Classmates"),
+                               subtitle: t("Potokundakılar, kim onlayndır", "Your stream, who is online"))
+                    }.appear(0)
                     NavigationLink { LibraryView() } label: {
                         NavRow(icon: "books.vertical.fill", color: C.orange, title: t("Kitabxana", "Library"),
                                subtitle: t("Axtarış, sifariş, götürdüyün kitablar", "Search, order, your borrowed books"))
@@ -93,6 +97,7 @@ struct TuitionView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Təhsil haqqı", "Tuition"))
+        .track("tuition")
         .refreshable { Haptic.soft(); key += 1 }
     }
 }
@@ -178,6 +183,7 @@ struct TurnstileView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Turniket", "Gate log"))
+        .track("turnstile")
         .refreshable { Haptic.soft(); key += 1 }
     }
 
@@ -280,6 +286,7 @@ struct DocsView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(title ?? t("Sənədlər", "Documents"))
+        .track("docs")
         .refreshable { key += 1 }
     }
 }
@@ -428,6 +435,7 @@ struct OnlineServicesView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Onlayn xidmətlər", "Online services"))
+        .track("online_services")
         .refreshable { ordersKey += 1 }
     }
 

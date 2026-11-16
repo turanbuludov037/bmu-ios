@@ -38,6 +38,7 @@ struct GradesView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Qiymətlər", "Grades"))
+        .track("grades")
         .task { if app.grades.isEmpty && !app.gradesLoading { await app.loadGrades() } }
         .refreshable { Haptic.soft(); await app.loadGrades(app.gradeSel.isEmpty ? nil : app.gradeSel) }
         .sheet(item: $open) { r in
