@@ -107,6 +107,9 @@ actor Cloud {
     private var profile = Profile()
 
     var connected: Bool { uid != nil }
+    /// Son qoşulma xətası (ekranda göstərmək üçün).
+    private(set) var lastError = ""
+    private var lastAuth = ""
 
     private let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -197,12 +200,12 @@ actor Cloud {
     /// Daxil ol: uğurlu = true, parol/hesab səhvi = false, internet xətası = throw.
     private func trySignIn(_ email: String, _ key: String) async throws -> Bool {
         do { adopt(try await authCall("signInWithPassword", ["email": email, "password": key])); return true }
-        catch CloudError.auth { return false }
+        catch CloudError.auth(let m) { lastAuth = m; return false }
     }
 
     private func tryCreate(_ email: String, _ key: String) async throws -> Bool {
         do { adopt(try await authCall("signUp", ["email": email, "password": key])); return true }
-        catch CloudError.auth { return false }
+        catch CloudError.auth(let m) { lastAuth = m; return false }
     }
 
     // MARK: Firestore
@@ -225,6 +228,27 @@ actor Cloud {
 
     func deleteDoc(_ path: String) async throws {
         _ = try await request("\(docsBase)/\(path)", method: "DELETE")
+    }
+
+    var currentNumber: String { number }
+
+    /// Bir neçə yazını birlikdə (atomik) icra edir.
+    func commit(_ writes: [[String: Any]]) async throws {
+        _ = try await request("\(docsBase):commit", method: "POST", body: ["writes": writes])
+    }
+
+    /// field IN [values] sorğusu (ən çox 10 dəyər).
+    func queryIn(_ collection: String, field: String, values: [String]) async throws -> [(id: String, data: [String: Any])] {
+        let filter: [String: Any] = ["fieldFilter": ["field": ["fieldPath": field], "op": "IN",
+                                                     "value": ["arrayValue": ["values": values.prefix(10).map { ["stringValue": $0] }]]]]
+        let body: [String: Any] = ["structuredQuery": ["from": [["collectionId": collection]], "where": filter]]
+        let r = try await request("\(docsBase):runQuery", method: "POST", body: body)
+        var out: [(id: String, data: [String: Any])] = []
+        for row in r as? [[String: Any]] ?? [] {
+            guard let doc = row["document"] as? [String: Any], let name = doc["name"] as? String else { continue }
+            out.append((id: String(name.split(separator: "/").last ?? ""), data: FS.decodeFields(doc["fields"] as? [String: Any] ?? [:])))
+        }
+        return out
     }
 
     /// Sadə sorğu: bərabərlik şərtləri (AND).
@@ -250,7 +274,35 @@ actor Cloud {
         guard FirebaseConfig.enabled, !number.isEmpty else { return }
         self.number = number.trimmed.lowercased()
         self.profile = profile
-        do { try await signIn(number: number, password: password) } catch { uid = nil }
+        do {
+            try await signIn(number: number, password: password)
+            lastError = ""
+        } catch {
+            uid = nil
+            lastError = error.localizedDescription
+        }
+    }
+
+    func setProfile(_ p: Profile) {
+        profile = p
+        if number.isEmpty { number = p.number.trimmed.lowercased() }
+    }
+
+    /// Hesab qoşulmayıbsa (məs. açılışda internet yox idi) saxlanmış girişlə yenidən qoşulur.
+    func ensureConnected() async throws {
+        if uid != nil { return }
+        guard FirebaseConfig.enabled else { throw CloudError.notConfigured }
+        guard let c = Keychain.load() else {
+            throw CloudError.denied(t("Bunun üçün girişdə \"Məni xatırla\" seçilməlidir", "This needs \"Remember me\" at sign-in"))
+        }
+        number = c.0.trimmed.lowercased()
+        do {
+            try await signIn(number: c.0, password: c.1)
+            lastError = ""
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
     }
 
     private func signIn(number: String, password: String) async throws {
@@ -274,7 +326,7 @@ actor Cloud {
                 if try await trySignIn(Cloud.email(number, i), key) { idx = i; ok = true; break }
             }
         }
-        guard ok, let me = uid else { throw CloudError.auth("SIGN_IN") }
+        guard ok, let me = uid else { throw CloudError.auth(lastAuth.isEmpty ? "SIGN_IN" : lastAuth) }
         Keychain.set("fb_key_\(base)", key)
         Keychain.set("fb_idx_\(base)", String(idx))
         if known != idx { try? await setDoc("latest/\(base)", ["n": idx]) }
@@ -315,6 +367,7 @@ actor Cloud {
 
     /// Görünmək / görünməmək. Görünməyəndə qeyd silinir.
     func publish(_ on: Bool, photo: UIImage?) async throws {
+        try await ensureConnected()
         guard let me = uid else { throw CloudError.notConfigured }
         if !on { try await deleteDoc("students/\(me)"); return }
         let p = profile
@@ -334,6 +387,7 @@ actor Cloud {
 
     /// Potokdakı görünən tələbələr (onlayn olanlar əvvəl).
     func mates() async throws -> [Mate] {
+        try await ensureConnected()
         guard let me = uid else { throw CloudError.notConfigured }
         let rows = try await query("students", equals: [("stream", Cloud.stream(profile.group)), ("visible", true)])
         let now = Date()
@@ -368,5 +422,99 @@ actor Cloud {
         var d = data
         d["updated"] = Date()
         try? await setDoc("live/\(number)", d)
+    }
+}
+
+// MARK: - Elanlar, sorğu, "Gələcəm" (Android Cloud.kt ilə eyni sənədlər və qaydalar)
+
+struct Ann: Identifiable, Sendable, Equatable {
+    let id: String
+    let title: String, body: String, image: String, link: String
+    let until: Date?
+    let target: String
+    let created: Date
+    let pollQuestion: String
+    let pollOptions: [String]
+    let rsvp: Bool
+    let capacity: Int
+    var rsvpCount: Int
+    var active: Bool { until.map { $0 > Date() } ?? true }
+    var hasPoll: Bool { pollOptions.count >= 2 }
+    var full: Bool { capacity > 0 && rsvpCount >= capacity }
+}
+
+extension Cloud {
+    /// Bu tələbəyə aid hədəflər: hamı, kurs, potok, qrup, şəxsən.
+    static func targets(_ p: Profile) -> [String] {
+        var t = ["all"]
+        let st = stream(p.group), g = groupCode(p.group)
+        let course = p.course.filter(\.isNumber)
+        let num = p.number.lowercased().filter { $0.isLetter || $0.isNumber }
+        if !st.isEmpty { t.append("stream_\(st)") }
+        if !g.isEmpty { t.append("group_\(g)") }
+        if !course.isEmpty { t.append("course_\(course)") }
+        if !num.isEmpty { t.append("student_\(num)") }
+        return t
+    }
+
+    private static func ann(_ id: String, _ d: [String: Any]) -> Ann {
+        let poll = d["poll"] as? [String: Any]
+        return Ann(id: id, title: d["title"] as? String ?? "", body: d["body"] as? String ?? "",
+                   image: d["image"] as? String ?? "", link: d["link"] as? String ?? "",
+                   until: d["until"] as? Date, target: d["target"] as? String ?? "all",
+                   created: d["created"] as? Date ?? .distantPast,
+                   pollQuestion: poll?["question"] as? String ?? "",
+                   pollOptions: (poll?["options"] as? [Any] ?? []).compactMap { $0 as? String },
+                   rsvp: d["rsvp"] as? Bool ?? false, capacity: d["capacity"] as? Int ?? 0, rsvpCount: d["rsvpCount"] as? Int ?? 0)
+    }
+
+    /// Hədəfləri bu tələbəyə uyğun olan bütün elanlar (ən yenisi əvvəl).
+    func announcements(targets: [String]) async throws -> [Ann] {
+        let rows = try await queryIn("announcements", field: "target", values: targets)
+        return rows.map { Cloud.ann($0.id, $0.data) }.filter { !$0.title.isEmpty }.sorted { $0.created > $1.created }
+    }
+
+    func announcement(_ id: String) async throws -> Ann? {
+        guard let d = try await getDoc("announcements/\(id)") else { return nil }
+        return Cloud.ann(id, d)
+    }
+
+    /// Mənim səsim və "Gələcəm" qeydim.
+    func myAnswers(_ id: String) async -> (choice: Int?, going: Bool) {
+        guard uid != nil else { return (nil, false) }
+        let me = currentNumber
+        let v = (try? await getDoc("announcements/\(id)/votes/\(me)")) ?? nil
+        let g = (try? await getDoc("announcements/\(id)/rsvps/\(me)")) ?? nil
+        return (v?["choice"] as? Int, g != nil)
+    }
+
+    func vote(_ id: String, choice: Int, name: String, group: String) async throws {
+        guard uid != nil else { throw CloudError.denied(t("Hesab hələ qoşulmayıb. Bir az sonra yenidən cəhd et.", "Not connected yet. Try again in a moment.")) }
+        try await setDoc("announcements/\(id)/votes/\(currentNumber)",
+                         ["choice": choice, "name": String(name.prefix(110)), "group": String(Cloud.groupCode(group).prefix(18)), "at": Date()])
+    }
+
+    /// "Gələcəm" / ləğv: qeyd və sayğac BİR əməliyyatda dəyişir (qaydalar bunu yoxlayır).
+    func setGoing(_ id: String, going: Bool, name: String, group: String) async throws {
+        guard uid != nil else { throw CloudError.denied(t("Hesab hələ qoşulmayıb. Bir az sonra yenidən cəhd et.", "Not connected yet. Try again in a moment.")) }
+        guard let a = try await announcement(id) else { return }
+        let me = currentNumber
+        let have = ((try? await getDoc("announcements/\(id)/rsvps/\(me)")) ?? nil) != nil
+        let root = "projects/\(FirebaseConfig.projectId)/databases/(default)/documents"
+        let annName = "\(root)/announcements/\(id)"
+        let mine = "\(annName)/rsvps/\(me)"
+        var writes: [[String: Any]] = []
+        if going && !have {
+            if a.full { throw CloudError.denied(t("Təəssüf, yer qalmayıb.", "Sorry, no places left.")) }
+            writes.append(["update": ["name": mine, "fields": FS.fields(["name": String(name.prefix(110)), "group": String(Cloud.groupCode(group).prefix(18)), "at": Date()])],
+                           "currentDocument": ["exists": false]])
+            writes.append(["update": ["name": annName, "fields": FS.fields(["rsvpCount": a.rsvpCount + 1])],
+                           "updateMask": ["fieldPaths": ["rsvpCount"]]])
+        } else if !going && have {
+            writes.append(["delete": mine])
+            writes.append(["update": ["name": annName, "fields": FS.fields(["rsvpCount": max(0, a.rsvpCount - 1)])],
+                           "updateMask": ["fieldPaths": ["rsvpCount"]]])
+        } else { return }
+        try await commit(writes)
     }
 }

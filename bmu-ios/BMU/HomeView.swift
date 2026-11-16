@@ -25,6 +25,7 @@ struct HomeView: View {
                     }
 
                     HeroCard().appear(1)
+                    AnnouncementBanner().appear(2)
                     NextLessonCard().appear(2)
                     QuickTiles().appear(3)
 
@@ -41,8 +42,10 @@ struct HomeView: View {
             .background(AppBackground())
             .overlay { if confetti > 0 { Confetti().id(confetti) } }
             .navigationTitle(app.greeting)
-            .refreshable { Haptic.soft(); await app.refreshHome() }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { AnnouncementsBell() } }
+            .refreshable { Haptic.soft(); await refreshWork { await app.refreshHome() } }
             .task {
+                Task { await AnnStore.shared.load(app.profile) }
                 await app.ensureMonth(Date())
                 let next = Day.add(7, to: Date())
                 if Day.monthKey(next) != Day.monthKey(Date()) { await app.ensureMonth(next) }

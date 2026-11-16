@@ -37,6 +37,8 @@ actor Portal {
     /// Sessiya bitəndə avtomatik yenidən giriş üçün (yalnız RAM-da).
     private var creds: (String, String)?
     private var generation = 0
+    /// Eyni anda bir neçə sorğu sessiyanın bitdiyini görsə, yalnız BİR dəfə yenidən daxil olunur.
+    private var relogin: Task<Void, Error>?
 
     private static func makeSession() -> URLSession {
         let c = URLSessionConfiguration.ephemeral
@@ -77,6 +79,10 @@ actor Portal {
         } catch let e as PortalError {
             report(false)
             throw e
+        } catch let e as URLError where e.code == .cancelled {
+            throw CancellationError()                       // ekran yeniləndi / bağlandı — internet xətası deyil
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             report(false)
             throw PortalError.network
@@ -97,7 +103,16 @@ actor Portal {
         let gen = generation
         let body = try await send(r)
         guard Portal.isLoginPage(body), let c = creds else { return body }
-        if gen == generation { _ = try await login(c.0, c.1) }
+        if gen == generation {
+            if let running = relogin {
+                try await running.value
+            } else {
+                let task = Task { _ = try await self.login(c.0, c.1) }
+                relogin = task
+                defer { relogin = nil }
+                try await task.value
+            }
+        }
         return try await send(r)
     }
 
@@ -109,7 +124,7 @@ actor Portal {
 
     /// Giriş: əvvəl giriş səhifəsi (PHPSESSID cookie), sonra form → auth.php. Uğurlu olsa açılan səhifənin HTML-i.
     func login(_ number: String, _ password: String) async throws -> String {
-        session.invalidateAndCancel()
+        session.finishTasksAndInvalidate()           // gedən sorğular yarımçıq kəsilməsin
         session = Portal.makeSession()
         _ = try await send(request("index.php"))
         var r = request("auth.php")

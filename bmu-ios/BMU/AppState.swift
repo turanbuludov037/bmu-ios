@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+/// "Aşağı çək → yenilə": iş ayrıca tapşırıqda gedir ki, ekran yenilənəndə sorğu yarımçıq kəsilməsin
+/// (əks halda iOS sorğunu ləğv edir və "interneti yoxlayın" xətası çıxırdı).
+func refreshWork(_ work: @escaping @MainActor () async -> Void) async {
+    await Task { @MainActor in await work() }.value
+}
+
 /// Ağır HTML oxunuşu əsas axından kənarda (ekran donmasın).
 func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
     await Task.detached(priority: .userInitiated, operation: work).value
@@ -79,6 +85,8 @@ final class AppState: ObservableObject {
         restoreError = ""
         loggedIn = true
         Usage.shared.setUser(p)
+        UserDefaults.standard.set(Cloud.targets(p), forKey: "ann_targets")
+        Task { await AnnStore.shared.load(p) }
         Task.detached { await Cloud.shared.connect(number: number, password: password, profile: p) }
         Task { await loadPhoto() }
         Task { await ensureMonth(Date()); await ensureMonth(Day.add(7, to: Date())) }
@@ -90,6 +98,8 @@ final class AppState: ObservableObject {
         Updates.clear()
         Notifier.cancelAll()
         Classroom.clearOnLogout()
+        UserDefaults.standard.removeObject(forKey: "ann_targets")
+        AnnStore.shared.all = []
         Task.detached { await Cloud.shared.signOut() }
         birthdays = nil; tab = 0
         Task { await Portal.shared.logout() }
@@ -144,6 +154,7 @@ final class AppState: ObservableObject {
             loadedMonths.insert(mk)
             scheduleError = ""
             rescheduleReminders()
+        } catch is CancellationError {
         } catch {
             scheduleError = error.localizedDescription
         }
@@ -162,6 +173,8 @@ final class AppState: ObservableObject {
                 guard !list.isEmpty else { gradesError = t("Semestr siyahısı tapılmadı", "Semester list not found"); return }
                 gradeSems = list
                 if gradeSel.isEmpty { gradeSel = (list.first { $0.selected } ?? list[list.count - 1]).value }
+            } catch is CancellationError {
+                return
             } catch {
                 gradesError = error.localizedDescription
                 return
@@ -210,6 +223,7 @@ final class AppState: ObservableObject {
             let parsed = await offMain { Parsers.journal(Parsers.extractAjaxData(body) ?? body) }
             guard want == journalSel else { return }
             if let parsed { journal = parsed } else { journal = []; journalError = t("Bu semestrin jurnalı oxunmadı", "This semester's journal could not be loaded") }
+        } catch is CancellationError {
         } catch {
             journalError = error.localizedDescription
         }

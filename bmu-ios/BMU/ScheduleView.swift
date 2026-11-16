@@ -41,7 +41,7 @@ struct ScheduleView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .navigationTitle(t("Cədvəl", "Schedule"))
-            .refreshable { Haptic.soft(); await app.ensureMonth(day, force: true) }
+            .refreshable { Haptic.soft(); let d = day; await refreshWork { await app.ensureMonth(d, force: true) } }
             .task(id: Day.key(Day.monday(of: day))) {
                 // həftə iki aya düşə bilər: hər ikisini yüklə
                 let monday = Day.monday(of: day)

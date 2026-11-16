@@ -94,12 +94,38 @@ enum Updates {
     /// Arxa plan tapşırığı.
     static func runBackground() async {
         scheduleRefresh()
+        await checkAnnouncements()
         guard enabled else { return }
         _ = await check()
     }
 
+    // MARK: yeni elan bildirişi (push əvəzinə: iOS arxa planda yoxlayır)
+
+    /// Bu elanlar artıq görülüb/bildirilib — təkrar bildiriş getməsin.
+    static func markAnnsNotified(_ ids: [String]) {
+        var s = Set(UserDefaults.standard.stringArray(forKey: "notified_anns") ?? [])
+        s.formUnion(ids)
+        UserDefaults.standard.set(Array(s.suffix(500)), forKey: "notified_anns")
+        UserDefaults.standard.set(true, forKey: "anns_baseline")
+    }
+
+    static func checkAnnouncements() async {
+        guard FirebaseConfig.enabled, let targets = UserDefaults.standard.stringArray(forKey: "ann_targets"), !targets.isEmpty,
+              let list = try? await Cloud.shared.announcements(targets: targets) else { return }
+        let known = Set(UserDefaults.standard.stringArray(forKey: "notified_anns") ?? [])
+        let baseline = UserDefaults.standard.bool(forKey: "anns_baseline")
+        let fresh = list.filter { $0.active && !known.contains($0.id) }
+        markAnnsNotified(list.map(\.id))
+        guard baseline else { return }              // ilk dəfə: köhnə elanlar üçün bildiriş göndərmə
+        for a in fresh.prefix(3) {
+            await Notifier.show(id: "ann-\(a.id)", title: "📢 " + a.title,
+                                body: a.body.isEmpty ? t("Yeni elan", "New announcement") : String(a.body.prefix(220)))
+        }
+    }
+
     /// Tətbiq açılanda: son yoxlamadan 15 dəqiqə keçibsə.
     static func checkIfDue() async {
+        await checkAnnouncements()
         guard enabled else { return }
         let last = UserDefaults.standard.double(forKey: "updates_last_at")
         if Date().timeIntervalSince1970 - last < 15 * 60 { return }

@@ -599,8 +599,13 @@ struct MatesView: View {
         .scrollIndicators(.hidden)
         .background(AppBackground())
         .navigationTitle(t("Qrup yoldaşları", "Classmates"))
-        .refreshable { await load() }
+        .refreshable { await refreshWork { await load() } }
         .task {
+            await Cloud.shared.setProfile(app.profile)
+            if visible {
+                // əvvəl görünən idisə, qeydin yerində olduğuna əmin ol
+                try? await Cloud.shared.publish(true, photo: Prefs.shared.customPhoto.flatMap { UIImage(data: $0) } ?? app.photo)
+            }
             while !Task.isCancelled {
                 if visible { await load() }
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
@@ -620,18 +625,24 @@ struct MatesView: View {
         }
     }
 
+    /// Seçim dərhal yadda qalır (özü-özünə sönmür). Bulud alınmasa, səbəbi göstərilir və növbəti qoşulmada yenidən cəhd olunur.
     private func setVisible(_ on: Bool) {
         busy = true
         Haptic.select()
+        UserDefaults.standard.set(on, forKey: "mates_visible")
+        visible = on
+        if !on { mates = [] }
+        Usage.shared.action(on ? "mates_on" : "mates_off")
+        let photo = Prefs.shared.customPhoto.flatMap { UIImage(data: $0) } ?? app.photo
+        let p = app.profile
         Task {
             do {
-                try await Cloud.shared.publish(on, photo: Prefs.shared.customPhoto.flatMap { UIImage(data: $0) } ?? app.photo)
-                UserDefaults.standard.set(on, forKey: "mates_visible")
-                visible = on
-                if on { await load() } else { mates = [] }
-                Usage.shared.action(on ? "mates_on" : "mates_off")
+                await Cloud.shared.setProfile(p)
+                try await Cloud.shared.publish(on, photo: photo)
+                error = ""
+                if on { await load() }
             } catch {
-                self.error = error.localizedDescription
+                self.error = (on ? t("Hələ görünmürsən: ", "Not visible yet: ") : t("Gizlənmək alınmadı: ", "Could not hide: ")) + error.localizedDescription
             }
             busy = false
         }

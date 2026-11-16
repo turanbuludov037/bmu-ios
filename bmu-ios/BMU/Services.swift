@@ -7,6 +7,10 @@ struct ServicesView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    NavigationLink { AnnouncementsView() } label: {
+                        NavRow(icon: "megaphone.fill", color: C.orange, title: t("Elanlar", "Announcements"),
+                               subtitle: t("Universitetin elanları, sorğular, tədbirlər", "University news, polls, events"))
+                    }.appear(0)
                     NavigationLink { MatesView() } label: {
                         NavRow(icon: "person.3.fill", color: C.green, title: t("Qrup yoldaşları", "Classmates"),
                                subtitle: t("Potokundakılar, kim onlayndır", "Your stream, who is online"))
