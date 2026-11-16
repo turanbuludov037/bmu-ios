@@ -384,17 +384,26 @@ struct Confetti: View {
         GeometryReader { g in
             ZStack {
                 ForEach(0..<36, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(colors[i % colors.count])
-                        .frame(width: 7, height: 11)
-                        .rotationEffect(.degrees(fall ? Double(i * 47 % 360) + 360 : 0))
-                        .position(x: CGFloat((i * 53) % 100) / 100 * g.size.width,
-                                  y: fall ? g.size.height + 30 : -20 - CGFloat(i % 6) * 18)
-                        .animation(.easeIn(duration: 1.6 + Double(i % 5) * 0.25).delay(Double(i % 7) * 0.06), value: fall)
+                    piece(i, size: g.size)
                 }
             }
         }
         .allowsHitTesting(false)
         .onAppear { fall = true }
+    }
+
+    private func piece(_ i: Int, size: CGSize) -> some View {
+        let x: CGFloat = CGFloat((i * 53) % 100) / 100.0 * size.width
+        let startY: CGFloat = -20.0 - CGFloat(i % 6) * 18.0
+        let endY: CGFloat = size.height + 30.0
+        let angle: Double = fall ? Double(i * 47 % 360) + 360.0 : 0.0
+        let duration: Double = 1.6 + Double(i % 5) * 0.25
+        let delay: Double = Double(i % 7) * 0.06
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(colors[i % colors.count])
+            .frame(width: 7, height: 11)
+            .rotationEffect(.degrees(angle))
+            .position(x: x, y: fall ? endY : startY)
+            .animation(.easeIn(duration: duration).delay(delay), value: fall)
     }
 }

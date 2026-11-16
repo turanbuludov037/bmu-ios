@@ -193,7 +193,8 @@ enum Updates {
     @discardableResult
     static func check() async -> String {
         guard let creds = Keychain.load() else { setStatus("nocreds"); return "nocreds" }
-        if !(await Portal.shared.hasSession) {
+        let hasSession = await Portal.shared.hasSession
+        if !hasSession {
             do { _ = try await Portal.shared.login(creds.0, creds.1) } catch { setStatus("login"); return "login" }
         }
         guard var snap = await fetchSnapshot() else { setStatus("fetch"); return "fetch" }

@@ -138,7 +138,8 @@ private struct SettingsBlock: View {
                 .onChange(of: prefs.reminders) { _, on in
                     Haptic.select()
                     Task {
-                        if on && !(await Notifier.authorized()) { notifAllowed = await Notifier.requestPermission() }
+                        let allowed = await Notifier.authorized()
+                        if on && !allowed { notifAllowed = await Notifier.requestPermission() }
                         app.rescheduleReminders()
                     }
                 }
@@ -160,7 +161,12 @@ private struct SettingsBlock: View {
                 .tint(C.indigo)
                 .onChange(of: prefs.updates) { _, on in
                     Haptic.select()
-                    if on { Task { if !(await Notifier.authorized()) { notifAllowed = await Notifier.requestPermission() } } }
+                    if on {
+                        Task {
+                            let allowed = await Notifier.authorized()
+                            if !allowed { notifAllowed = await Notifier.requestPermission() }
+                        }
+                    }
                 }
                 if prefs.updates {
                     Text(status).font(.caption).foregroundStyle(.secondary).contentTransition(.opacity)
