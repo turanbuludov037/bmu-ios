@@ -69,6 +69,12 @@ struct ProfileView: View {
                     }
                     .glassButton()
                     .tint(C.rose)
+                    .confirmationDialog(t("Hesabdan çıxılsın?", "Sign out?"), isPresented: $confirmLogout, titleVisibility: .visible) {
+                        Button(t("Çıxış", "Sign out"), role: .destructive) { app.logout() }
+                        Button(t("Ləğv et", "Cancel"), role: .cancel) {}
+                    } message: {
+                        Text(t("Saxlanmış nömrə və şifrə bu iPhone-dan silinəcək.", "The saved number and password will be removed from this iPhone."))
+                    }
                     .appear(4)
 
                     Text("myBEU \(version)").font(.caption).foregroundStyle(.secondary)
@@ -80,12 +86,6 @@ struct ProfileView: View {
             .background(AppBackground())
             .navigationTitle(t("Profil", "Profile"))
             .fullScreenCover(isPresented: $showIntro) { IntroView { showIntro = false } }
-            .confirmationDialog(t("Hesabdan çıxılsın?", "Sign out?"), isPresented: $confirmLogout, titleVisibility: .visible) {
-                Button(t("Çıxış", "Sign out"), role: .destructive) { app.logout() }
-                Button(t("Ləğv et", "Cancel"), role: .cancel) {}
-            } message: {
-                Text(t("Saxlanmış nömrə və şifrə bu iPhone-dan silinəcək.", "The saved number and password will be removed from this iPhone."))
-            }
         }
     }
 }

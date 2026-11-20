@@ -228,6 +228,12 @@ struct TimetablePhotoView: View {
                             Label(t("Cədvəli sil", "Delete timetable"), systemImage: "trash")
                         }
                         .glassButton().tint(C.rose)
+                        .confirmationDialog(t("Cədvəl silinsin?", "Delete the timetable?"), isPresented: $confirmDelete, titleVisibility: .visible) {
+                            Button(t("Sil", "Delete"), role: .destructive) {
+                                store.clear(); app.rescheduleReminders(); WidgetData.publish(app.lessons)
+                            }
+                            Button(t("Ləğv et", "Cancel"), role: .cancel) {}
+                        }
                     }
                     entriesList(store.entries)
                 }
@@ -242,12 +248,6 @@ struct TimetablePhotoView: View {
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task { await read(item) }
-        }
-        .confirmationDialog(t("Cədvəl silinsin?", "Delete the timetable?"), isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button(t("Sil", "Delete"), role: .destructive) {
-                store.clear(); app.rescheduleReminders(); WidgetData.publish(app.lessons)
-            }
-            Button(t("Ləğv et", "Cancel"), role: .cancel) {}
         }
     }
 

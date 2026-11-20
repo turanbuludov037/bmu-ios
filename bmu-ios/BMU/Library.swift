@@ -199,6 +199,14 @@ struct LibDetailView: View {
                                     Spacer()
                                     if inv.orderForm != nil {
                                         Button(t("Sifariş", "Order")) { Haptic.tap(); confirmInv = inv }
+                                            .confirmationDialog(t("Sifariş verilsin?", "Place an order?"),
+                                                                isPresented: Binding(get: { confirmInv?.id == inv.id }, set: { if !$0 { confirmInv = nil } }),
+                                                                titleVisibility: .visible) {
+                                                Button(t("Sifariş ver", "Order")) { order() }
+                                                Button(t("Ləğv et", "Cancel"), role: .cancel) { confirmInv = nil }
+                                            } message: {
+                                                Text(t("Sifariş 45 dəqiqə ərzində hazırlanır, 24 saat ərzində götürülməlidir.", "It will be ready within 45 minutes and must be picked up within 24 hours."))
+                                            }
                                             .glassButton(prominent: true).tint(C.orange)
                                             .disabled(ordering)
                                     }
@@ -216,13 +224,6 @@ struct LibDetailView: View {
         .background(AppBackground())
         .navigationTitle(t("Material", "Item"))
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(t("Sifariş verilsin?", "Place an order?"), isPresented: Binding(get: { confirmInv != nil }, set: { if !$0 { confirmInv = nil } }),
-                            titleVisibility: .visible) {
-            Button(t("Sifariş ver", "Order")) { order() }
-            Button(t("Ləğv et", "Cancel"), role: .cancel) { confirmInv = nil }
-        } message: {
-            Text(t("Sifariş 45 dəqiqə ərzində hazırlanır, 24 saat ərzində götürülməlidir.", "It will be ready within 45 minutes and must be picked up within 24 hours."))
-        }
     }
 
     private func order() {
